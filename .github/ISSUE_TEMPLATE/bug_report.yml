@@ -1,0 +1,108 @@
+name: Bug Report 🐛
+description: 报告一个问题以帮助我们改进 EchoAgent
+title: "[BUG]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您花时间报告问题！为了更好地帮助您，请尽可能详细地填写以下信息。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 检查清单
+      description: 在提交之前，请确认以下事项
+      options:
+        - label: 我已经搜索了现有的 Issues，确认这不是重复问题
+          required: true
+        - label: 我已经阅读了文档和常见问题
+          required: true
+        - label: 我使用的是最新版本的 EchoAgent
+          required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: 问题描述
+      description: 清楚简洁地描述遇到的问题
+      placeholder: 请详细描述问题...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 期望的行为
+      description: 描述您期望应该发生什么
+      placeholder: 我期望...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: 实际的行为
+      description: 描述实际发生了什么
+      placeholder: 实际上...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: 复现步骤
+      description: 详细描述如何复现这个问题
+      placeholder: |
+        1. 执行 '...'
+        2. 点击 '...'
+        3. 看到错误
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请提供您的运行环境信息
+      value: |
+        - 操作系统: [例如: Windows 11, macOS 13, Ubuntu 22.04]
+        - Python 版本: [例如: 3.9.0]
+        - EchoAgent 版本: [例如: v1.0.0]
+        - 使用的 LLM 模型: [例如: doubao-pro]
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: 错误日志
+      description: 请粘贴相关的错误日志或截图
+      placeholder: |
+        请粘贴错误信息或添加截图
+      render: shell
+
+  - type: textarea
+    id: config-info
+    attributes:
+      label: 配置信息
+      description: 请提供相关的配置信息（请隐藏敏感信息如 API 密钥）
+      placeholder: |
+        ```python
+        config = AgentConfig(
+            user_id="test_user",
+            main_model="doubao-pro",
+            # 其他配置...
+        )
+        ```
+      render: python
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 额外信息
+      description: 添加任何其他可能有助于解决问题的信息
+      placeholder: 任何其他有用的信息...

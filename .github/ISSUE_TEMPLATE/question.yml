@@ -1,0 +1,90 @@
+name: Question ❓
+description: 提问或寻求帮助
+title: "[QUESTION]: "
+labels: ["question", "help wanted"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        有问题？我们来帮助您！请详细描述您的问题。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 检查清单
+      description: 在提交之前，请确认以下事项
+      options:
+        - label: 我已经阅读了 README.md 和相关文档
+          required: true
+        - label: 我已经搜索了现有的 Issues
+          required: true
+        - label: 我已经查看了常见问题解答
+          required: true
+
+  - type: dropdown
+    id: question-type
+    attributes:
+      label: 问题类型
+      description: 您的问题属于哪个类别？
+      options:
+        - 安装和配置 (Installation & Configuration)
+        - 使用方法 (Usage)
+        - 工具开发 (Tool Development)
+        - 性能问题 (Performance)
+        - 错误理解 (Understanding Errors)
+        - 最佳实践 (Best Practices)
+        - 其他 (Other)
+    validations:
+      required: true
+
+  - type: textarea
+    id: question-description
+    attributes:
+      label: 问题描述
+      description: 详细描述您的问题
+      placeholder: 我想了解如何...
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-tried
+    attributes:
+      label: 已尝试的方法
+      description: 描述您已经尝试过的解决方法
+      placeholder: |
+        我已经尝试了：
+        1. ...
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请提供您的运行环境信息
+      value: |
+        - 操作系统: [例如: Windows 11, macOS 13, Ubuntu 22.04]
+        - Python 版本: [例如: 3.9.0]
+        - EchoAgent 版本: [例如: v1.0.0]
+      render: markdown
+
+  - type: textarea
+    id: code-example
+    attributes:
+      label: 代码示例
+      description: 如果相关，请提供您正在使用的代码
+      placeholder: |
+        ```python
+        # 您的代码示例
+        ```
+      render: python
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 额外信息
+      description: 添加任何其他可能有助于回答问题的信息
+      placeholder: 任何其他有用的信息...

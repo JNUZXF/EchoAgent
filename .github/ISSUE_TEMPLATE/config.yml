@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 查看文档
+    url: https://github.com/JNUZXF/EchoAgent/blob/main/README.md
+    about: 查看完整的项目文档和使用指南
+  - name: 💬 讨论区
+    url: https://github.com/JNUZXF/EchoAgent/discussions
+    about: 在 GitHub Discussions 中与社区讨论想法和问题
+  - name: 📋 待办事项
+    url: https://github.com/JNUZXF/EchoAgent/blob/main/ToDo.md
+    about: 查看项目的优化计划和可认领的任务
