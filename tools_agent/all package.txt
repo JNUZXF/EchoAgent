@@ -1,0 +1,1 @@
+pip install openai pandas numpy scipy pdfplumber docx nbformat pymupdf aiohttp nest_asyncio beautifulsoup4 requests fake_useragent urllib3 cloudscraper zhipuai groq dashscope google-generativeai flask flask_cors volcengine flask_sock matplotlib scikit-learn tqdm exceptions pytorch seaborn aiofiles python-docx

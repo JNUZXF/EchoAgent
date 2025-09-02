@@ -1,0 +1,170 @@
+# 文件路径: .gitignore
+# 功能: 排除不需要版本控制的文件和目录，保护敏感信息
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# 环境变量和配置文件
+.env
+.env.local
+.env.production
+.env.development
+*.env
+config.json
+server_config.json
+
+# API 密钥和敏感信息
+api_keys.txt
+secrets.txt
+*.key
+*.pem
+*.p12
+
+# 日志文件
+*.log
+logs/
+crawler.log
+
+# 缓存和临时文件
+*.cache
+.cache/
+temp/
+tmp/
+*.tmp
+*.temp
+
+# 用户数据和文件存储
+files/
+user_data/
+uploads/
+downloads/
+data/
+
+# 向量数据库和模型文件
+*.pkl
+*.h5
+*.pt
+*.pth
+*.onnx
+vectors/
+embeddings/
+models/
+
+# 文档和输出文件
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+output/
+reports/
+
+# 测试覆盖率
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 操作系统相关
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+
+# 备份文件
+*.bak
+*.backup
+*~
+
+# 特定于项目的排除
+# 对话历史和会话数据
+conversations.json
+display_conversations.md
+full_context_conversations.md
+tool_conversations.json
+agent_coder_system_prompt.md
+judge_prompt.md
+
+# 股票数据和爬虫结果
+cninfo_downloads/
+stock_data/
+financial_reports/
+
+# 大型媒体文件
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.mp3
+*.wav
+*.flac
+*.aac
+
+# 文档生成
+site/
+docs/_build/
