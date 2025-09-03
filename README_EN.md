@@ -1,4 +1,4 @@
-# EchoAgent - 智能体框架
+# EchoAgent - Agent Framework
 
 <div align="center">
 
@@ -7,186 +7,19 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 ![GitHub Stars](https://img.shields.io/github/stars/JNUZXF/EchoAgent?style=for-the-badge)
 
-**先回答，再决策的智能体框架 | Answer First, Then Decide Agent Framework**
+**Answer First, Then Decide Agent Framework**
 
-[🇨🇳 中文](#chinese) • [🇺🇸 English](#english)
+[🇺🇸 English](README_EN.md) • [🇨🇳 中文](README.md)
 
-[快速开始 Quick Start](#-quick-start) • [特性 Features](#-core-features) • [架构 Architecture](#%EF%B8%8F-architecture-design) • [文档 Documentation](#-usage-guide) • [贡献 Contributing](#-contributing)
+[Quick Start](#-quick-start) • [Features](#-core-features) • [Architecture](#%EF%B8%8F-architecture-design) • [Documentation](#-usage-guide) • [Contributing](#-contributing)
 
 </div>
 
----
-
-## 🇨🇳 Chinese
-
-### 📖 项目简介
-
-EchoAgent 是一个创新的智能体框架，采用独特的"**先回答-再判断-工具调用-END()终止**"机制。与传统的先调用工具再回答的模式不同，EchoAgent 让主模型首先基于已有知识直接回答用户问题，然后由决策模型判断是否需要调用工具进行进一步处理。
-
-### 🌟 核心特性
-
-- **🔄 双模型协同**: 主模型负责回答，决策模型负责判断工具调用
-- **⚡ 快速响应**: 先给出直接回答，再根据需要深入处理
-- **🛡️ 安全执行**: 内置代码执行器，支持安全的 Python 代码运行
-- **🔧 工具生态**: 丰富的工具集，支持文档处理、数据分析、网络搜索等
-- **📊 持久化上下文**: 跨对话的变量保持，支持连续的数据分析任务
-- **🎯 智能终止**: 通过 `END()` 信号实现智能的任务完成判断
-
-### 🏗️ 架构设计
-
-```mermaid
-graph TD
-    A["用户问题"] --> B["主模型直接回答"]
-    B --> C["决策模型判断"]
-    C --> D{"需要工具?"}
-    D -->|"是"| E["调用工具"]
-    D -->|"否"| F["输出 END()"]
-    E --> G["工具执行结果"]
-    G --> H["更新上下文"]
-    H --> I["主模型分析结果"]
-    I --> C
-    F --> J["任务完成"]
-```
-
-#### 核心组件
-
-- **AgentConfig**: 配置管理，支持多用户、多模型
-- **AgentStateManager**: 状态管理，处理对话历史和文件存储
-- **AgentToolManager**: 工具管理，统一注册和调用本地/远程工具
-- **LLMManager**: 大模型管理，支持多种 LLM 提供商
-- **CodeExecutor**: 安全代码执行器，支持持久化上下文
-
-### 🚀 快速开始
-
-#### 环境要求
-
-- Python 3.8+
-- 支持的 LLM 提供商 API 密钥（豆包、OpenAI、Claude 等）
-
-#### 安装步骤
-
-1. **克隆项目**
-```bash
-git clone https://github.com/JNUZXF/EchoAgent.git
-cd EchoAgent
-```
-
-2. **安装依赖**
-```bash
-pip install -r requirements.txt  # 需要创建此文件
-```
-
-3. **配置环境变量**
-```bash
-# 复制环境变量模板
-cp .env.example .env
-
-# 编辑 .env 文件，添加你的 API 密钥
-DOUBAO_API_KEY=your_doubao_api_key
-OPENAI_API_KEY=your_openai_api_key
-# 更多配置...
-```
-
-4. **运行示例**
-```bash
-python agent_frame.py
-```
-
-#### 基础使用
-
-```python
-from agent_frame import Agent, AgentConfig
-
-# 创建配置
-config = AgentConfig(
-    user_id="demo_user",
-    main_model="doubao-pro",
-    tool_model="doubao-pro", 
-    flash_model="doubao-pro"
-)
-
-# 初始化智能体
-agent = Agent(config)
-
-# 启动对话
-await agent.chat_loop()
-```
-
-### 📚 使用文档
-
-#### 工具系统
-
-EchoAgent 内置多种工具：
-
-**CodeRunner - 代码执行器**
-```python
-# 用户: 帮我计算斐波那契数列的前10项
-# AI会直接回答，然后自动调用CodeRunner执行代码
-```
-
-**文档处理工具**
-- PDF 阅读和转换
-- 文档向量化和检索
-- 图像处理和OCR
-
-**数据分析工具**
-- 股票数据获取
-- 财务报表分析
-- 数据可视化
-
-### 🔧 配置说明
-
-#### 支持的模型
-
-```python
-# 豆包系列
-"doubao-pro", "doubao-1.5-lite", "doubao-1.5-pro-256k"
-
-# OpenAI 系列  
-"gpt-4o", "gpt-4o-mini"
-
-# Claude 系列
-"anthropic/claude-3.5-sonnet"
-
-# 开源模型
-"opensource/llama-3.1-8b"
-```
-
-#### 安全配置
-
-CodeExecutor 支持三种安全级别：
-- `strict`: 仅允许基本标准库
-- `medium`: 允许常用科学计算库（默认）
-- `permissive`: 允许大部分库，仅禁止危险操作
-
-### 📁 项目结构
-
-```
-EchoAgent/
-├── agent_frame.py          # 主框架入口
-├── prompts/               # 提示词管理
-│   └── agent_prompts.py
-├── tools_agent/           # 工具集合
-│   ├── llm_manager.py     # LLM 管理
-│   ├── code_interpreter.py
-│   └── ...
-├── utils/                 # 工具实现
-│   ├── code_runner.py     # 代码执行器
-│   └── ...
-├── tools_configs.py       # 工具配置
-├── ToDo.md               # 优化清单
-└── files/                # 用户数据存储
-```
-
----
-
-## 🇺🇸 English
-
-### 📖 Project Overview
+## 📖 Project Overview
 
 EchoAgent is an innovative agent framework that adopts a unique "**Answer First-Judge-Tool Calling-END() Termination**" mechanism. Unlike traditional approaches that call tools before answering, EchoAgent lets the main model first directly answer user questions based on existing knowledge, then uses a decision model to determine whether tools need to be called for further processing.
 
-### 🌟 Core Features
+## 🌟 Core Features
 
 - **🔄 Dual Model Collaboration**: Main model handles answers, decision model handles tool calling judgments
 - **⚡ Rapid Response**: Provides direct answers first, then processes deeply as needed
@@ -195,7 +28,7 @@ EchoAgent is an innovative agent framework that adopts a unique "**Answer First-
 - **📊 Persistent Context**: Cross-conversation variable persistence, supporting continuous data analysis tasks
 - **🎯 Intelligent Termination**: Smart task completion judgment through `END()` signals
 
-### 🏗️ Architecture Design
+## 🏗️ Architecture Design
 
 ```mermaid
 graph TD
@@ -211,7 +44,7 @@ graph TD
     F --> J["Task Complete"]
 ```
 
-#### Core Components
+### Core Components
 
 - **AgentConfig**: Configuration management, supporting multi-user, multi-model
 - **AgentStateManager**: State management, handling conversation history and file storage
@@ -219,14 +52,14 @@ graph TD
 - **LLMManager**: LLM management, supporting various LLM providers
 - **CodeExecutor**: Safe code executor with persistent context support
 
-### 🚀 Quick Start
+## 🚀 Quick Start
 
-#### Requirements
+### Requirements
 
 - Python 3.8+
 - Supported LLM provider API keys (Doubao, OpenAI, Claude, etc.)
 
-#### Installation Steps
+### Installation Steps
 
 1. **Clone Repository**
 ```bash
@@ -255,7 +88,7 @@ OPENAI_API_KEY=your_openai_api_key
 python agent_frame.py
 ```
 
-#### Basic Usage
+### Basic Usage
 
 ```python
 from agent_frame import Agent, AgentConfig
@@ -275,31 +108,57 @@ agent = Agent(config)
 await agent.chat_loop()
 ```
 
-### 📚 Usage Guide
+## 📚 Usage Guide
 
-#### Tool System
+### Tool System
 
 EchoAgent includes various built-in tools:
 
-**CodeRunner - Code Executor**
+#### CodeRunner - Code Executor
 ```python
 # User: Help me calculate the first 10 Fibonacci numbers
 # AI will answer directly, then automatically call CodeRunner to execute code
 ```
 
-**Document Processing Tools**
+#### Document Processing Tools
 - PDF reading and conversion
 - Document vectorization and retrieval
 - Image processing and OCR
 
-**Data Analysis Tools**
+#### Data Analysis Tools
 - Stock data retrieval
 - Financial report analysis
 - Data visualization
 
-### 🔧 Configuration
+### Extending Development
 
-#### Supported Models
+#### Adding Custom Tools
+
+1. **Create Tool Class**
+```python
+class MyTool:
+    def execute(self, **kwargs):
+        # Tool logic
+        return result
+```
+
+2. **Register Tool**
+```python
+agent.tool_manager.register_local_tool(
+    "my_tool", 
+    MyTool(), 
+    tool_config_for_prompt
+)
+```
+
+3. **Update Tool Configuration**
+Add tool description in `tools_configs.py`.
+
+## 🔧 Configuration
+
+### Model Configuration
+
+Supports multiple LLM providers:
 
 ```python
 # Doubao Series
@@ -315,14 +174,14 @@ EchoAgent includes various built-in tools:
 "opensource/llama-3.1-8b"
 ```
 
-#### Security Configuration
+### Security Configuration
 
 CodeExecutor supports three security levels:
 - `strict`: Only allows basic standard libraries
 - `medium`: Allows common scientific computing libraries (default)
 - `permissive`: Allows most libraries, only prohibits dangerous operations
 
-### 📁 Project Structure
+## 📁 Project Structure
 
 ```
 EchoAgent/
@@ -340,8 +199,6 @@ EchoAgent/
 ├── ToDo.md               # Optimization checklist
 └── files/                # User data storage
 ```
-
----
 
 ## 🤝 Contributing
 
@@ -417,6 +274,6 @@ Thanks to the following projects and communities for their support:
 
 **⭐ If this project helps you, please give us a star!**
 
-[⬆ Back to Top](#echoagent---智能体框架)
+[⬆ Back to Top](#echoagent---agent-framework)
 
 </div>
