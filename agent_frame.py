@@ -10,22 +10,24 @@ import json
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, AsyncGenerator
+import logging
 
-from tools_agent.code_interpreter import extract_python_code
 from tools_agent.function_call_toolbox import get_func_name, convert_outer_quotes
 from tools_agent.parse_function_call import parse_function_call
 from tools_agent.json_tool import get_json
 from tools_agent.llm_manager import LLMManager
 
-from utils.code_runner import CodeExecutor
+from utils.code_runner import CodeExecutor, extract_python_code
 from utils.agent_tool_continue_analyze import ContinueAnalyze
+from utils.file_manager import file_manager, SessionInfo
 
 from prompts.agent_prompts import (
     AGENT_SYSTEM_PROMPT,
     AGENT_JUDGE_PROMPT,
     AGENT_INTENTION_RECOGNITION_PROMPT,
     AGENT_TOOLS_GUIDE,
-    TOOL_RESULT_ANA_PROMPT
+    TOOL_RESULT_ANA_PROMPT,
+    FRAMEWORK_RUNNING_CHARACTER
 )
 from tools_configs import (
     CODE_EXECUTOR_TOOL,
@@ -40,14 +42,15 @@ print("AgentCoder模块加载完成")
 class AgentConfig:
     """集中管理智能体的所有配置"""
     def __init__(
-        self, user_id: str, main_model: str, tool_model: str, flash_model: str, agent_name: str = "agent_coder"
+        self, user_id: str, main_model: str, tool_model: str, flash_model: str, agent_name: str = "echo_agent", conversation_id: str = "echo_agent"
     ):
         self.user_id = user_id
+        self.conversation_id = conversation_id
         self.main_model = main_model
         self.tool_model = tool_model
         self.flash_model = flash_model
         self.agent_name = agent_name
-
+        
         # 获取当前脚本所在目录（agent文件夹）
         self.agent_dir = os.path.dirname(os.path.abspath(__file__))
         
@@ -65,21 +68,32 @@ class AgentStateManager:
     """管理和持久化智能体的所有状态，包括对话历史和用户文件。"""
     def __init__(self, config: AgentConfig):
         self.config = config
+        # 向后兼容: 若外部未注入session/logger, 在EchoAgent中会重建
+        self.session: SessionInfo = None  # type: ignore
+        self.logger: logging.Logger = logging.getLogger("agent.session")
         self.conversations: List[Dict[str, str]] = []
         self.tool_conversations: List[Dict[str, str]] = []
         # 用户看到的信息+AI展示的信息，也是用于判断工具的信息
         self.display_conversations: str = ""
         # 所有的上下文，即包含agent推理需要的所有信息 = 用户看到的信息 + 工具执行的结果 + AI展示的信息，用于给主系统判断信息是否充分，下一步需要做什么
         self.full_context_conversations: str = ""
+        # 兼容旧逻辑，仍确保目录存在
         os.makedirs(self.config.user_folder, exist_ok=True)
+        # 会话文件路径集合占位
+        self._conv_files: Dict[str, Any] = {}
         self.init_conversations()
 
     def init_conversations(self, system_prompt: str = ""):
         """初始化或重置对话历史 更新系统提示词"""
         self.conversations = [{"role": "system", "content": system_prompt}] if system_prompt else []
-        # 保存系统提示词到.md
-        with open(f"files/{self.config.user_id}/{self.config.agent_name}/agent_coder_system_prompt.md", "w", encoding="utf-8") as f:
-            f.write(system_prompt)
+        # 保存系统提示词到当前会话(若session存在)
+        try:
+            if self.session is not None:
+                if not self._conv_files:
+                    self._conv_files = file_manager.conversation_files(self.session)
+                self._conv_files["system_prompt"].write_text(system_prompt, encoding="utf-8")
+        except Exception as e:
+            print(f"[ERROR] 写入系统提示词失败: {e}")
 
     def add_message(self, role: str, content: str, stream_prefix: str = ""):
         """向对话历史中添加消息"""
@@ -134,11 +148,12 @@ class AgentStateManager:
             str: 格式化的文件列表，按文件夹分组显示
         """
         try:
-            user_folder = self.config.user_folder
-            print(f"[DEBUG] 正在扫描用户文件夹: {user_folder}, 递归模式: {recursive}")
+            # 优先扫描当前会话目录
+            user_folder = str(self.session.session_dir) if self.session is not None else self.config.user_folder
+            print(f"[DEBUG] 正在扫描会话/用户文件夹: {user_folder}, 递归模式: {recursive}")
             
             if not os.path.exists(user_folder):
-                print(f"[DEBUG] 用户文件夹不存在，正在创建: {user_folder}")
+                print(f"[DEBUG] 会话/用户文件夹不存在，正在创建: {user_folder}")
                 os.makedirs(user_folder, exist_ok=True)
                 return "用户文件夹为空"
             
@@ -190,14 +205,22 @@ class AgentStateManager:
     def save_all_conversations(self):
         """将所有对话历史保存到文件"""
         try:
-            with open(os.path.join(self.config.user_folder, "conversations.json"), "w", encoding="utf-8") as f:
-                json.dump(self.conversations, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(self.config.user_folder, "display_conversations.md"), "w", encoding="utf-8") as f:
-                f.write(self.display_conversations)
-            with open(os.path.join(self.config.user_folder, "full_context_conversations.md"), "w", encoding="utf-8") as f:
-                f.write(self.full_context_conversations)
-            with open(os.path.join(self.config.user_folder, "tool_conversations.json"), "w", encoding="utf-8") as f:
-                json.dump(self.tool_conversations, f, ensure_ascii=False, indent=2)
+            if self.session is not None:
+                if not self._conv_files:
+                    self._conv_files = file_manager.conversation_files(self.session)
+                self._conv_files["conversations"].write_text(json.dumps(self.conversations, ensure_ascii=False, indent=2), encoding="utf-8")
+                self._conv_files["display"].write_text(self.display_conversations, encoding="utf-8")
+                self._conv_files["full"].write_text(self.full_context_conversations, encoding="utf-8")
+                self._conv_files["tools"].write_text(json.dumps(self.tool_conversations, ensure_ascii=False, indent=2), encoding="utf-8")
+            else:
+                with open(os.path.join(self.config.user_folder, "conversations.json"), "w", encoding="utf-8") as f:
+                    json.dump(self.conversations, f, ensure_ascii=False, indent=2)
+                with open(os.path.join(self.config.user_folder, "display_conversations.md"), "w", encoding="utf-8") as f:
+                    f.write(self.display_conversations)
+                with open(os.path.join(self.config.user_folder, "full_context_conversations.md"), "w", encoding="utf-8") as f:
+                    f.write(self.full_context_conversations)
+                with open(os.path.join(self.config.user_folder, "tool_conversations.json"), "w", encoding="utf-8") as f:
+                    json.dump(self.tool_conversations, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[ERROR] 保存对话历史时出错: {e}")
 
@@ -215,7 +238,6 @@ class LocalToolManager:
             return await method(**kwargs)
         else:
             return method(**kwargs)
-
 
 class AgentToolManager:
     """统一管理所有工具（本地）"""
@@ -239,29 +261,31 @@ class AgentToolManager:
         else:
             raise ValueError(f"工具 '{tool_name}' 未找到")
 
-
 # --- 提示词管理 ---
 class AgentPromptManager:
     """负责根据当前状态和工具动态生成提示词"""
-    def get_system_prompt(self, files_list: str, **kwargs) -> str:
+    def get_system_prompt(self, **kwargs) -> str:
         return AGENT_SYSTEM_PROMPT.format(
             AGENT_TOOLS_GUIDE=AGENT_TOOLS_GUIDE, 
-            files=files_list,
-            userID=kwargs.get("userID", ""),
+            FRAMEWORK_RUNNING_CHARACTER=FRAMEWORK_RUNNING_CHARACTER
+        )
+
+    def get_judge_prompt(self, full_context_conversations: str, **kwargs) -> str:
+        return AGENT_JUDGE_PROMPT.format(
+            full_context_conversations=full_context_conversations,
+            session_dir=kwargs.get("session_dir", ""),
+            files=kwargs.get("files", ""),
             agent_name=kwargs.get("agent_name", ""),
             current_date=datetime.now().strftime("%Y-%m-%d")
         )
 
-    def get_judge_prompt(self, full_context_conversations: str) -> str:
-        return AGENT_JUDGE_PROMPT.format(full_context_conversations=full_context_conversations)
-
-    def get_intention_prompt(self, tool_configs: str, files_list: str, user_id: str, display_conversations: str) -> str:
+    def get_intention_prompt(self, **kwargs) -> str:
         return AGENT_INTENTION_RECOGNITION_PROMPT.format(
-            tools=tool_configs,
-            files=files_list,
-            userID=user_id,
+            tools=kwargs.get("tool_configs", ""),
+            files=kwargs.get("files", ""),
+            userID=kwargs.get("user_id", ""),
             AGENT_TOOLS_GUIDE=AGENT_TOOLS_GUIDE,
-            conversation=display_conversations
+            conversation=kwargs.get("display_conversations", "")
         )
 
 # --- 核心框架 ---
@@ -270,9 +294,19 @@ class EchoAgent:
     def __init__(self, config: AgentConfig, **kwargs):
         self.config = config
         self.user_id = config.user_id
-        self.state_manager = AgentStateManager(config)
+        self.conversation_id = config.conversation_id
+        # 创建工具与提示词管理
         self.tool_manager = AgentToolManager()
         self.prompt_manager = AgentPromptManager()
+        # 创建会话目录与日志
+        self.session: SessionInfo = file_manager.create_session(user_id=self.user_id, agent_name=self.config.agent_name)
+        self.logger: logging.Logger = file_manager.get_session_logger(self.session)
+        self.logger.info("创建会话目录", extra={"event": "session_init", "session_dir": str(self.session.session_dir)})
+        # 状态管理器并注入会话
+        self.state_manager = AgentStateManager(config)
+        self.state_manager.session = self.session
+        # 初始化对话文件索引
+        self.state_manager._conv_files = file_manager.conversation_files(self.session)
 
         self.main_llm = LLMManager(config.main_model)
         self.tool_llm = LLMManager(config.tool_model)
@@ -291,12 +325,14 @@ class EchoAgent:
     async def _get_tool_intention(self) -> List[str]:
         self.state_manager.tool_conversations = []
         """使用LLM判断用户的意图，并返回建议的工具列表"""
-        prompt = self.prompt_manager.get_intention_prompt(
-            tool_configs=self.tool_manager.get_all_tool_configs_for_prompt(),
-            files_list=self.state_manager.list_user_files(),
-            user_id=self.config.user_id,
-            display_conversations=self.state_manager.display_conversations
-        )
+        kwargs = {
+            "files": self.state_manager.list_user_files(),
+            "user_id": self.config.user_id,
+            "display_conversations": self.state_manager.display_conversations,
+            "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt()
+        }
+        prompt = self.prompt_manager.get_intention_prompt(**kwargs)
+
         self.state_manager.tool_conversations.append({"role": "user", "content": prompt})
         intention_history = [{"role": "user", "content": prompt}]
         
@@ -310,32 +346,33 @@ class EchoAgent:
             json_result = get_json(ans)
             if not isinstance(json_result, dict):
                 print(f"[ERROR] 解析后的JSON不是一个字典: {json_result}")
-                return ["END_CONVERSATION()"]
+                return ["END()"]
 
-            tools = json_result.get("tools", ["END_CONVERSATION()"])
+            tools = json_result.get("tools", ["END()"])
             if not isinstance(tools, list):
                 print(f"[ERROR] 'tools' 字段不是一个列表: {tools}")
-                return ["END_CONVERSATION()"]
+                return ["END()"]
             return tools
         except Exception as e:
             print(f"[ERROR] 解析意图JSON时发生未知错误: {e}")
-            return ["END_CONVERSATION()"]
+            return ["END()"]
  
     async def _agent_reset(self):
         kwargs = {
             "userID": self.user_id,
+            "session_dir": str(self.session.session_dir),
+            "files": self.state_manager.list_user_files(),
             "agent_name": self.config.agent_name,
             "current_date": datetime.now().strftime("%Y-%m-%d")
         }
-        system_prompt = self.prompt_manager.get_system_prompt(
-            files_list=self.state_manager.list_user_files(),
-            **kwargs
-        )
+        system_prompt = self.prompt_manager.get_system_prompt(**kwargs)
         self.state_manager.init_conversations(system_prompt)
-        judge_prompt = self.prompt_manager.get_judge_prompt(self.state_manager.full_context_conversations)
-        # 保存judge_prompt到md文件
-        with open(f"files/{self.user_id}/{self.config.agent_name}/judge_prompt.md", "w", encoding="utf-8") as f:
-            f.write(judge_prompt)
+        judge_prompt = self.prompt_manager.get_judge_prompt(self.state_manager.full_context_conversations, **kwargs)
+        # 保存judge_prompt到当前会话
+        try:
+            self.state_manager._conv_files["judge_prompt"].write_text(judge_prompt, encoding="utf-8")
+        except Exception as e:
+            print(f"[ERROR] 写入judge_prompt失败: {e}")
         self.state_manager.conversations.append({"role": "user", "content": judge_prompt})
 
     async def process_query(self, question: str) -> AsyncGenerator[str, None]:
@@ -343,19 +380,23 @@ class EchoAgent:
         start_time = datetime.now()
         self.question_count += 1
         self.state_manager.add_message("user", question)
+        self.logger.info("收到用户问题", extra={"event": "user_question", "question_index": self.question_count, "question_preview": question[:200]})
 
         # 初始化对话状态
         await self._agent_reset()
 
         initial_response = ""
+        self.logger.info("开始主模型流式回答", extra={"event": "llm_answer_start", "model": self.config.main_model})
         for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
             initial_response += char
             yield char
         yield "\n"
         self.state_manager.add_message("assistant", initial_response)
+        self.logger.info("主模型初次回答完成", extra={"event": "llm_answer_end", "tokens": len(initial_response)})
 
         # 获取工具调用意图
         intention_tools = await self._get_tool_intention()
+        self.logger.info("意图判断结果", extra={"event": "intention_tools", "tools": intention_tools})
         last_agent_response = initial_response
 
         # 工具调用循环
@@ -390,7 +431,9 @@ class EchoAgent:
                 # 执行工具
                 self.params = params
                 print(f"[DEBUG] 执行工具: {func_name}")
+                self.logger.info("开始执行工具", extra={"event": "tool_start", "tool": func_name, "params": params})
                 tool_result = await self.tool_manager.execute_tool(func_name, **params)
+                self.logger.info("工具执行完成", extra={"event": "tool_end", "tool": func_name, "result_preview": str(tool_result)[:500]})
                 print(f"[DEBUG] 工具 '{func_name}' 返回结果长度: {len(str(tool_result))}")
                 self.state_manager.add_message("tool", str(tool_result), stream_prefix=f"工具{func_name}返回结果:")
                 # 根据工具结果生成下一步响应
@@ -398,11 +441,13 @@ class EchoAgent:
                 # 新增聊天记录并重置聊天轮数
                 await self._agent_reset()
                 next_response = ""
+                self.logger.info("主模型对工具结果进行分析", extra={"event": "llm_after_tool_start", "model": self.config.main_model, "tool": func_name})
                 for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
                     next_response += char
                     yield char
                 yield "\n"
                 self.state_manager.add_message("assistant", next_response)
+                self.logger.info("主模型分析完成", extra={"event": "llm_after_tool_end", "tokens": len(next_response)})
                 last_agent_response = next_response
                 # 获取下一个意图
                 intention_tools = await self._get_tool_intention()
@@ -413,12 +458,15 @@ class EchoAgent:
                 await self._agent_reset()
             except Exception as loop_error:
                 print(f"[ERROR] 工具循环中发生错误: {loop_error}")
+                self.logger.exception("工具循环错误", extra={"event": "tool_loop_error", "error": str(loop_error)})
                 break
         
         # 结束和清理
         self.state_manager.save_all_conversations()
         end_time = datetime.now()
-        print(f"[DEBUG] 流程处理完成，耗时: {(end_time - start_time).total_seconds():.2f}秒")
+        duration = (end_time - start_time).total_seconds()
+        print(f"[DEBUG] 流程处理完成，耗时: {duration:.2f}秒")
+        self.logger.info("流程处理完成", extra={"event": "query_done", "question_index": self.question_count, "duration_sec": duration})
 
     async def chat_loop(self):
         """启动交互式对话循环"""
@@ -468,7 +516,7 @@ async def agent_chat_loop():
         # 1. 初始化配置和协调器
         config = AgentConfig(
             user_id="ada",
-            main_model="doubao-pro",
+            main_model="doubao-seed-1-6-250615",
             tool_model="doubao-pro",
             flash_model="doubao-pro"
         )

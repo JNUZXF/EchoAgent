@@ -204,6 +204,48 @@ EchoAgent/
 └── files/                # User data storage
 ```
 
+### 📁 File & Session Management
+
+EchoAgent automatically creates a session-scoped directory on each agent start, organizing all artifacts and logs in a structured, production-ready way.
+
+- Root directory: `files/` by default, configurable via `AGENT_FILES_ROOT`
+- Layout per session: `files/{user_id}/{agent_name}/{session_id}/`
+- Subfolders: `logs/`, `conversations/`, `artifacts/`, `uploads/`, `outputs/`, `temp/`
+  and `images/`
+- Convenience pointer: `files/{user_id}/{agent_name}/latest.json` stores latest `session_id`
+
+See detailed guide: [docs/FileManagement.md](docs/FileManagement.md)
+
+### 🧾 Production-grade Logging
+
+EchoAgent persists rich, structured logs per session under `files/{user_id}/{agent_name}/{session_id}/logs/`:
+
+- `agent.log`: Rotating rich text logs (INFO+ console, DEBUG+ file)
+- `error.log`: Rotating error-only logs for quick incident triage
+- `events.jsonl`: Structured JSON logs, one event per line, suitable for downstream analysis
+
+Each log record includes contextual fields: `user_id`, `agent_name`, `session_id`. Key lifecycle events are captured: session init, user questions, LLM streaming phases, tool start/end, errors, and completion timing.
+
+Environment variables to tune behavior:
+
+```bash
+# Logging location follows AGENT_FILES_ROOT; defaults to project_root/files
+AGENT_LOG_MAX_BYTES=5242880      # per file max size, default 5MB
+AGENT_LOG_BACKUP=5               # rotated file count, default 5
+AGENT_LOG_CONSOLE_LEVEL=INFO     # console level, default INFO
+AGENT_LOG_FILE_LEVEL=DEBUG       # file level, default DEBUG
+```
+
+Example path:
+
+```
+files/ada/echo_agent/20250903-225827-432428/logs/
+├── agent.log
+├── agent.log.1
+├── error.log
+└── events.jsonl
+```
+
 ## 🤝 Contributing
 
 We welcome all forms of contributions! Please check [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.

@@ -3,8 +3,17 @@ from textwrap import dedent
 
 AGENT_TOOLS_GUIDE = dedent(
    """
-   # 代码执行工具
+   ## 代码执行工具
    - CodeRunner：你编写的代码都可以使用这个工具执行，适用于分析数据，构建模型，绘制图表等
+      - 注意：使用工具时，保存的任何文件的路径都必须在会话目录下，否则工具将无法找到文件
+      示例：保存图片时，路径可能为：image_path = "files\ada\echo_agent\20250903-180545-304578\temp\plot.png"
+      保存时代码即为：plt.savefig(image_path)
+   会话路径文件夹结构：
+      ├─ artifacts/             # 模型/工具产生的中间产物
+      ├─ uploads/               # 用户上传内容
+      ├─ outputs/               # 面向用户的最终输出
+      ├─ images/                # 保存图片
+      └─ temp/                  # 临时文件
    """
 ).strip()
 
@@ -49,19 +58,25 @@ AGENT_SYSTEM_PROMPT = dedent("""
 
    # 你的工具
    {AGENT_TOOLS_GUIDE}
-
-   
-   # 当前日期
-   {current_date}
+   ---
 
 """).strip()
 
 AGENT_JUDGE_PROMPT = dedent("""
-    # 聊天记录
-    {full_context_conversations}
-    ---
+   # 我的会话目录
+   {session_dir}
+
+   # 我的会话目录下的文件
+   {files}
+
+   # 当前日期
+   {current_date}
+
+   # 聊天记录
+   {full_context_conversations}
+   ---
    
-    现在，请判断回答我的问题或者判断接下来做什么：
+    现在，请回答我的问题或者判断接下来做什么：
 """).strip()
 
 
@@ -85,7 +100,7 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    {userID}
 
    ## 工具箱使用指引
-   {TOOLS_GUIDE}
+   {AGENT_TOOLS_GUIDE}
 
    ## 系统文件
    {files}

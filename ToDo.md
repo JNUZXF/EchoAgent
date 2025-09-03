@@ -6,14 +6,6 @@
 
 ## 优化清单（Agent 框架）
 
-- [ ] 核心循环与 END() 判定一致性校验
-  - **问题**: `tools_configs.py` 中 END 工具描述为 `END()`；`agent_frame.Agent` 中通过 `self.STOP_SIGNAL = "END()"` 与意图识别 JSON 的 `tools` 列表交互。不同提示词中存在 `END()` 与 `END_CONVERSATION()` 的混用描述风险。
-  - **行动**: 统一提示词与判断逻辑，仅保留 `END()`；在意图识别解析处对 `END()` 做健壮匹配（忽略大小写与空白）。
-
-- [ ] 意图识别提示词变量占位符不一致
-  - **问题**: `prompts/agent_prompts.py` 的 `AGENT_INTENTION_RECOGNITION_PROMPT` 使用 `{TOOLS_GUIDE}`，而 `AgentPromptManager.get_intention_prompt` 传入键为 `AGENT_TOOLS_GUIDE`，占位符名称不一致，导致提示词渲染缺失。
-  - **行动**: 统一占位符为 `{AGENT_TOOLS_GUIDE}` 或在渲染前进行替换，避免空段落。
-
 - [ ] 文件与路径管理一致性
   - **问题**: `AgentConfig` 使用 `self.agent_dir` 拼出 `files/{user_id}/{agent_name}`，但注释写的是“文件路径: agent/agent_frame.py”；示例与注释路径存在偏差；跨平台路径分隔符处理零散。
   - **行动**: 用 `pathlib.Path` 统一路径处理；更新注释与 README 的路径示例；将 `replace('\\','/')` 抽象为工具函数复用。
@@ -47,12 +39,8 @@
   - **行动**: 在 `AgentStateManager.add_message('tool', ...)` 前对长文本统一截断并生成摘要；将原文保存为外部文件并给出可回看路径。
 
 - [ ] 意图 JSON 解析健壮性
-  - **问题**: 解析失败时直接返回 `END_CONVERSATION()`；且 `tools` 字段与注释的 `tool` 命名在提示词中存在冲突；
+  - **问题**: 解析失败时直接返回 `END()`；且 `tools` 字段与注释的 `tool` 命名在提示词中存在冲突；
   - **行动**: 解析失败时尝试二次纠错（提取第一行内联 JSON）；名称冲突统一为 `tools`；如果返回空，退回“澄清意图”流程。
-
-- [ ] 代码片段提取器统一
-  - **问题**: `tools_agent/code_interpreter.py` 与 `utils/code_runner.py` 都实现了 `extract_python_code`；存在重复。
-  - **行动**: 在 `utils` 下保留一个实现，其他模块统一从该处导入；避免重复维护。
 
 - [ ] 事件与操作日志（前后端统一）
   - **问题**: 缺少用户每一步操作的统一记录与结构化格式，难以追踪问题。
@@ -61,10 +49,6 @@
 - [ ] 配置外置与多环境支持
   - **问题**: 模型名、端点、阈值写死在代码中；不同 provider 的 endpoint key 映射分散。
   - **行动**: 在根目录新增 `.env.example` 与 `config/`；将模型与端点、开关、阈值参数化；README 提供环境配置说明。
-
-- [ ] README 与开发者指南完善
-  - **问题**: 项目 README 尚未系统介绍“先答复-再判意图-工具执行-END() 停止”的核心机制与调试方法。
-  - **行动**: 在 README 增补架构图/流程图、快速开始、工具扩展步骤、日志/排错指南、常见问题。
 
 - [ ] Notebook 与代码路径同步
   - **问题**: `1. llm_api_test.ipynb`、`2. agent_test.ipynb` 存在，但与主框架行为未关联；
