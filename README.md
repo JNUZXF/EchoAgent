@@ -71,12 +71,23 @@ git clone https://github.com/JNUZXF/EchoAgent.git
 cd EchoAgent
 ```
 
-2. **Install Dependencies**
+2. **Create and Activate Virtual Environment**
+```bash
+# Windows (PowerShell)
+python -m venv venv
+./venv/Scripts/Activate.ps1
+
+# macOS/Linux (bash)
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. **Install Dependencies**
 ```bash
 pip install -r requirements.txt  # Need to create this file
 ```
 
-3. **Configure Environment Variables**
+4. **Configure Environment Variables**
 ```bash
 # Copy environment template
 cp .env.example .env
@@ -87,7 +98,7 @@ OPENAI_API_KEY=your_openai_api_key
 # More configurations...
 ```
 
-4. **Run Example**
+5. **Run Example**
 ```bash
 python agent_frame.py
 ```
@@ -95,7 +106,7 @@ python agent_frame.py
 #### Basic Usage
 
 ```python
-from agent_frame import Agent, AgentConfig
+from agent_frame import EchoAgent, AgentConfig
 
 # Create configuration
 config = AgentConfig(
@@ -106,7 +117,7 @@ config = AgentConfig(
 )
 
 # Initialize agent
-agent = Agent(config)
+agent = EchoAgent(config)
 
 # Start conversation
 await agent.chat_loop()
@@ -224,7 +235,7 @@ EchoAgent persists rich, structured logs per session under `files/{user_id}/{age
 - `error.log`: Rotating error-only logs for quick incident triage
 - `events.jsonl`: Structured JSON logs, one event per line, suitable for downstream analysis
 
-Each log record includes contextual fields: `user_id`, `agent_name`, `session_id`. Key lifecycle events are captured: session init, user questions, LLM streaming phases, tool start/end, errors, and completion timing.
+Each log record includes contextual fields: `user_id`, `agent_name`, `session_id`. Key lifecycle events are captured: session init, user questions, LLM streaming phases, tool start/end, errors, and completion timing. Conversation records are stored under `conversations/` as `conversations.json`, `display_conversations.md`, `full_context_conversations.md`, and `tool_conversations.json`.
 
 Environment variables to tune behavior:
 

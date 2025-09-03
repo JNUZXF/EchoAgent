@@ -71,12 +71,23 @@ git clone https://github.com/JNUZXF/EchoAgent.git
 cd EchoAgent
 ```
 
-2. **安装依赖**
+2. **创建并激活虚拟环境**
+```bash
+# Windows (PowerShell)
+python -m venv venv
+./venv/Scripts/Activate.ps1
+
+# macOS/Linux (bash)
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. **安装依赖**
 ```bash
 pip install -r requirements.txt  # 需要创建此文件
 ```
 
-3. **配置环境变量**
+4. **配置环境变量**
 ```bash
 # 复制环境变量模板
 cp .env.example .env
@@ -87,7 +98,7 @@ OPENAI_API_KEY=your_openai_api_key
 # 更多配置...
 ```
 
-4. **运行示例**
+5. **运行示例**
 ```bash
 python agent_frame.py
 ```
@@ -95,7 +106,7 @@ python agent_frame.py
 #### 基础使用
 
 ```python
-from agent_frame import Agent, AgentConfig
+from agent_frame import EchoAgent, AgentConfig
 
 # 创建配置
 config = AgentConfig(
@@ -106,7 +117,7 @@ config = AgentConfig(
 )
 
 # 初始化智能体
-agent = Agent(config)
+agent = EchoAgent(config)
 
 # 启动对话
 await agent.chat_loop()
@@ -247,10 +258,29 @@ A: 确认 `.env` 文件中的 API 密钥配置正确。
 
 ```bash
 # 查看完整对话历史
-cat files/{user_id}/{agent_name}/full_context_conversations.md
+cat files/{user_id}/{agent_name}/{session_id}/conversations/full_context_conversations.md
 
 # 查看工具执行日志
-cat files/{user_id}/{agent_name}/tool_conversations.json
+cat files/{user_id}/{agent_name}/{session_id}/conversations/tool_conversations.json
+```
+
+### 🧾 生产级日志
+
+每次会话的日志存放在 `files/{user_id}/{agent_name}/{session_id}/logs/` 下：
+
+- `agent.log`：富文本轮转日志（控制台 INFO+、文件 DEBUG+）
+- `error.log`：仅 ERROR 的轮转日志
+- `events.jsonl`：结构化 JSON 事件日志（一行一个事件）
+
+每条日志包含上下文字段：`user_id`、`agent_name`、`session_id`。关键生命周期事件会被记录：会话初始化、用户提问、LLM 流式阶段、工具开始/结束、错误、完成耗时。对话记录位于 `conversations/`：`conversations.json`、`display_conversations.md`、`full_context_conversations.md`、`tool_conversations.json`。
+
+可用环境变量调整行为：
+
+```bash
+AGENT_LOG_MAX_BYTES=5242880      # 每个日志文件最大大小（默认 5MB）
+AGENT_LOG_BACKUP=5               # 轮转文件数量（默认 5）
+AGENT_LOG_CONSOLE_LEVEL=INFO     # 控制台级别（默认 INFO）
+AGENT_LOG_FILE_LEVEL=DEBUG       # 文件级别（默认 DEBUG）
 ```
 
 ## 📄 许可证
