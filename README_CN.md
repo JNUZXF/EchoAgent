@@ -297,8 +297,8 @@ AGENT_LOG_FILE_LEVEL=DEBUG       # 文件级别（默认 DEBUG）
 ## 📞 联系我们
 
 - 提交 Issue: [GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
-- 邮箱: [请添加你的邮箱]
-- 微信群: [请添加二维码]
+- 邮箱: JNUZXF@163.com
+- 微信: ![微信二维码](images/wechatID.jpg)
 
 ---
 

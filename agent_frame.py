@@ -29,20 +29,18 @@ from prompts.agent_prompts import (
     TOOL_RESULT_ANA_PROMPT,
     FRAMEWORK_RUNNING_CHARACTER
 )
-from tools_configs import (
-    CODE_EXECUTOR_TOOL,
-    CONTINUE_ANALYZE_TOOL
-)
+from tools_agent.toolkit import ToolRegistry
+from tools_agent.builtin_tools import CodeRunner as Tool_CodeRunner, continue_analyze as Tool_ContinueAnalyze
 
 os.environ["NUMEXPR_MAX_THREADS"] = "32" 
 
-print("AgentCoder模块加载完成")
+logging.getLogger("agent.bootstrap").info("AgentCoder模块加载完成")
 
 # --- 配置管理 ---
 class AgentConfig:
     """集中管理智能体的所有配置"""
     def __init__(
-        self, user_id: str, main_model: str, tool_model: str, flash_model: str, agent_name: str = "echo_agent", conversation_id: str = "echo_agent"
+        self, user_id: str, main_model: str, tool_model: str, flash_model: str, agent_name: str = "echo_agent", conversation_id: str | None = None
     ):
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -56,7 +54,7 @@ class AgentConfig:
         
         # 基于agent目录构建路径，确保无论从哪里运行都能找到正确的文件
         self.user_folder = os.path.join(self.agent_dir, "files", self.user_id, self.agent_name)
-        print(f"[DEBUG] 子智能体文件夹: {self.user_folder}")
+        logging.getLogger("agent.config").debug(f"子智能体文件夹: {self.user_folder}")
         self.server_config_path = os.path.join(self.agent_dir, "server_config.json")
         
         # 确保路径使用正确的分隔符
@@ -77,6 +75,8 @@ class AgentStateManager:
         self.display_conversations: str = ""
         # 所有的上下文，即包含agent推理需要的所有信息 = 用户看到的信息 + 工具执行的结果 + AI展示的信息，用于给主系统判断信息是否充分，下一步需要做什么
         self.full_context_conversations: str = ""
+        # 工具执行聊天
+        self.tool_execute_conversations: str = ""
         # 兼容旧逻辑，仍确保目录存在
         os.makedirs(self.config.user_folder, exist_ok=True)
         # 会话文件路径集合占位
@@ -93,7 +93,56 @@ class AgentStateManager:
                     self._conv_files = file_manager.conversation_files(self.session)
                 self._conv_files["system_prompt"].write_text(system_prompt, encoding="utf-8")
         except Exception as e:
-            print(f"[ERROR] 写入系统提示词失败: {e}")
+            self.logger.exception("写入系统提示词失败: %s", e)
+
+    def restore_from_session_files(self):
+        """从会话目录恢复历史对话可视与全量上下文，便于跨请求续聊。
+
+        - display_conversations: 用户与助手可见的汇总（用于展示）
+        - full_context_conversations: 包含工具结果在内的全量上下文（用于主系统判断）
+        - tool_conversations: 工具意图评估与记录
+        - conversations: 原始对话列表（当前框架主要依赖 full_context 来构建 judge_prompt）
+        """
+        try:
+            if self.session is None:
+                return
+            if not self._conv_files:
+                self._conv_files = file_manager.conversation_files(self.session)
+
+            conv_paths = self._conv_files
+            # 恢复 display_conversations
+            try:
+                if conv_paths["display"].exists():
+                    self.display_conversations = conv_paths["display"].read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+            # 恢复 full_context_conversations
+            try:
+                if conv_paths["full"].exists():
+                    self.full_context_conversations = conv_paths["full"].read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+            # 恢复 tool_conversations
+            try:
+                if conv_paths["tools"].exists():
+                    tools_text = conv_paths["tools"].read_text(encoding="utf-8")
+                    self.tool_conversations = json.loads(tools_text) if tools_text.strip() else []
+            except Exception:
+                pass
+
+            # 可选：恢复 conversations 列表（当前流程主要通过 judge_prompt 使用 full_context）
+            try:
+                if conv_paths["conversations"].exists():
+                    conv_text = conv_paths["conversations"].read_text(encoding="utf-8")
+                    loaded = json.loads(conv_text) if conv_text.strip() else []
+                    if isinstance(loaded, list):
+                        self.conversations = loaded
+            except Exception:
+                pass
+        except Exception as e:
+            self.logger.exception("恢复历史会话失败: %s", e)
 
     def add_message(self, role: str, content: str, stream_prefix: str = ""):
         """向对话历史中添加消息"""
@@ -103,6 +152,7 @@ class AgentStateManager:
         if role == "user":
             self.display_conversations += f"===user===: \n{processed_content}\n"
             self.full_context_conversations += f"===user===: \n{processed_content}\n"
+            self.tool_execute_conversations += f"===user===: \n{processed_content}\n"
             self.conversations.append({"role": "user", "content": processed_content})
         elif role == "assistant":
             self.conversations.append({"role": "assistant", "content": processed_content})
@@ -110,6 +160,8 @@ class AgentStateManager:
             self.full_context_conversations += f"===assistant===: \n{processed_content}\n"
         elif role == "tool":
             self.full_context_conversations += f"===tool===: \n{stream_prefix}{processed_content}\n"
+        elif role == "react":
+            self.full_context_conversations += f"===react===: \n{stream_prefix}{processed_content}\n"
 
     def _decode_if_base64(self, content: str) -> str:
         """检查内容是否为Base64编码，如果是则尝试解码"""
@@ -150,10 +202,10 @@ class AgentStateManager:
         try:
             # 优先扫描当前会话目录
             user_folder = str(self.session.session_dir) if self.session is not None else self.config.user_folder
-            print(f"[DEBUG] 正在扫描会话/用户文件夹: {user_folder}, 递归模式: {recursive}")
+            self.logger.debug(f"正在扫描会话/用户文件夹: {user_folder}, 递归模式: {recursive}")
             
             if not os.path.exists(user_folder):
-                print(f"[DEBUG] 会话/用户文件夹不存在，正在创建: {user_folder}")
+                self.logger.debug(f"会话/用户文件夹不存在，正在创建: {user_folder}")
                 os.makedirs(user_folder, exist_ok=True)
                 return "用户文件夹为空"
             
@@ -170,7 +222,7 @@ class AgentStateManager:
                             relative_root = '根目录'
                         
                         folder_files[relative_root] = sorted(filenames)
-                        print(f"[DEBUG] 文件夹 {relative_root} 包含 {len(filenames)} 个文件")
+                        self.logger.debug(f"文件夹 {relative_root} 包含 {len(filenames)} 个文件")
             else:
                 # 只列举当前文件夹下的文件
                 filenames = [
@@ -195,11 +247,11 @@ class AgentStateManager:
             if result_lines and result_lines[-1] == "":
                 result_lines.pop()
             
-            print(f"[DEBUG] 找到 {sum(len(files) for files in folder_files.values())} 个文件，分布在 {len(folder_files)} 个文件夹中")
+            self.logger.debug(f"找到 {sum(len(files) for files in folder_files.values())} 个文件，分布在 {len(folder_files)} 个文件夹中")
             return "\n".join(result_lines)
             
         except Exception as e:
-            print(f"[ERROR] 扫描用户文件夹时出错: {e}")
+            self.logger.exception("扫描用户文件夹时出错: %s", e)
             return f"扫描用户文件夹时出错: {e}"
 
     def save_all_conversations(self):
@@ -212,6 +264,7 @@ class AgentStateManager:
                 self._conv_files["display"].write_text(self.display_conversations, encoding="utf-8")
                 self._conv_files["full"].write_text(self.full_context_conversations, encoding="utf-8")
                 self._conv_files["tools"].write_text(json.dumps(self.tool_conversations, ensure_ascii=False, indent=2), encoding="utf-8")
+                self._conv_files["tool_execute"].write_text(self.tool_execute_conversations, encoding="utf-8")
             else:
                 with open(os.path.join(self.config.user_folder, "conversations.json"), "w", encoding="utf-8") as f:
                     json.dump(self.conversations, f, ensure_ascii=False, indent=2)
@@ -221,8 +274,10 @@ class AgentStateManager:
                     f.write(self.full_context_conversations)
                 with open(os.path.join(self.config.user_folder, "tool_conversations.json"), "w", encoding="utf-8") as f:
                     json.dump(self.tool_conversations, f, ensure_ascii=False, indent=2)
+                with open(os.path.join(self.config.user_folder, "tool_execute_conversations.md"), "w", encoding="utf-8") as f:
+                    f.write(self.tool_execute_conversations)
         except Exception as e:
-            print(f"[ERROR] 保存对话历史时出错: {e}")
+            self.logger.exception("保存对话历史时出错: %s", e)
 
 # --- 工具管理 ---
 class LocalToolManager:
@@ -239,23 +294,46 @@ class LocalToolManager:
         else:
             return method(**kwargs)
 
+
 class AgentToolManager:
     """统一管理所有工具（本地）"""
     def __init__(self):
         self.local_tools: Dict[str, LocalToolManager] = {}
         self.tool_prompt_config: List[Dict] = []
+        # 新增: 基于Pydantic的工具注册表
+        self.registry: ToolRegistry = ToolRegistry()
 
-    def register_local_tool(self, name: str, tool_instance: Any, tool_config_for_prompt: Dict):
-        """注册一个本地Python工具"""
+    def register_local_tool(self, name: str, tool_instance: Any, tool_config_for_prompt: Dict[str, Any]):
+        """
+        注册一个本地Python工具
+
+        Args:
+            name: 工具名称
+            tool_instance: 工具实例，比如CodeExecutor()
+            tool_config_for_prompt: 工具配置，用于格式化提示词
+        """
         self.local_tools[name] = LocalToolManager(tool_instance)
         self.tool_prompt_config.append(tool_config_for_prompt)
 
+    def register_tool_function(self, func: Any):
+        """注册基于 @tool 装饰的函数工具"""
+        self.registry.register(func)
+
     def get_all_tool_configs_for_prompt(self) -> str:
         """获取所有工具的配置，用于格式化提示词"""
+        # 优先返回注册表Schema，若为空再回退到旧配置
+        schemas = self.registry.get_schemas_json()
+        if schemas and schemas != '[]':
+            return schemas
         return json.dumps(self.tool_prompt_config, ensure_ascii=False, indent=2)
 
     async def execute_tool(self, tool_name: str, **kwargs) -> Any:
         """执行指定工具"""
+        # 优先走统一注册表执行
+        if self.registry.has(tool_name):
+            import json as _json
+            return self.registry.execute(tool_name, _json.dumps(kwargs, ensure_ascii=False))
+        # 回退: 旧的本地工具机制
         if tool_name in self.local_tools:
             return await self.local_tools[tool_name].execute(**kwargs)
         else:
@@ -281,10 +359,10 @@ class AgentPromptManager:
 
     def get_intention_prompt(self, **kwargs) -> str:
         return AGENT_INTENTION_RECOGNITION_PROMPT.format(
+            AGENT_TOOLS_GUIDE=AGENT_TOOLS_GUIDE,
             tools=kwargs.get("tool_configs", ""),
             files=kwargs.get("files", ""),
             userID=kwargs.get("user_id", ""),
-            AGENT_TOOLS_GUIDE=AGENT_TOOLS_GUIDE,
             conversation=kwargs.get("display_conversations", "")
         )
 
@@ -298,15 +376,26 @@ class EchoAgent:
         # 创建工具与提示词管理
         self.tool_manager = AgentToolManager()
         self.prompt_manager = AgentPromptManager()
-        # 创建会话目录与日志
-        self.session: SessionInfo = file_manager.create_session(user_id=self.user_id, agent_name=self.config.agent_name)
+        # 创建会话目录与日志（支持前端注入session_id）
+        self.session: SessionInfo = file_manager.create_session(
+            user_id=self.user_id,
+            agent_name=self.config.agent_name,
+            session_id=self.conversation_id if self.conversation_id else None,
+        )
         self.logger: logging.Logger = file_manager.get_session_logger(self.session)
         self.logger.info("创建会话目录", extra={"event": "session_init", "session_dir": str(self.session.session_dir)})
         # 状态管理器并注入会话
         self.state_manager = AgentStateManager(config)
         self.state_manager.session = self.session
+        # 为状态管理器注入组件级 logger，确保日志落到会话目录
+        self.state_manager.logger = file_manager.get_component_logger(self.session, "state")
         # 初始化对话文件索引
         self.state_manager._conv_files = file_manager.conversation_files(self.session)
+        # 恢复历史会话上下文，支持跨请求续聊
+        try:
+            self.state_manager.restore_from_session_files()
+        except Exception as _:
+            pass
 
         self.main_llm = LLMManager(config.main_model)
         self.tool_llm = LLMManager(config.tool_model)
@@ -318,9 +407,11 @@ class EchoAgent:
         self.STOP_SIGNAL = "END()"
 
     def _register_local_tools(self):
-        """注册所有本地工具"""
-        self.tool_manager.register_local_tool("CodeRunner", CodeExecutor(), CODE_EXECUTOR_TOOL)
-        self.tool_manager.register_local_tool("continue_analyze", ContinueAnalyze(), CONTINUE_ANALYZE_TOOL)
+        """注册所有工具"""
+        # 新体系: 注册基于 @tool 的函数工具
+        self.tool_manager.register_tool_function(Tool_CodeRunner)
+        self.tool_manager.register_tool_function(Tool_ContinueAnalyze)
+        # 如需兼容旧有提示示例/本地实例，可在此保留注册，但当前已由Schema自动生成参数定义
     
     async def _get_tool_intention(self) -> List[str]:
         self.state_manager.tool_conversations = []
@@ -331,33 +422,37 @@ class EchoAgent:
             "display_conversations": self.state_manager.display_conversations,
             "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt()
         }
-        prompt = self.prompt_manager.get_intention_prompt(**kwargs)
+        tool_system_prompt = self.prompt_manager.get_intention_prompt(**kwargs)
 
-        self.state_manager.tool_conversations.append({"role": "user", "content": prompt})
-        intention_history = [{"role": "user", "content": prompt}]
+        self.state_manager.tool_conversations.append({"role": "user", "content": tool_system_prompt})
+        intention_history = [{"role": "user", "content": tool_system_prompt}]
         
         ans = ""
         for char in self.tool_llm.generate_stream_conversation(intention_history):
             ans += char
-        print(f"[INTENTION RAW]: {ans}")
+        self.logger.debug("INTENTION RAW: %s", ans)
         self.state_manager.tool_conversations.append({"role": "assistant", "content": ans})
+
+        self.state_manager._conv_files["tool_system_prompt"].write_text(tool_system_prompt, encoding="utf-8")
+        self.state_manager.tool_execute_conversations += f"===assistant===: \n{ans}\n"
 
         try:
             json_result = get_json(ans)
             if not isinstance(json_result, dict):
-                print(f"[ERROR] 解析后的JSON不是一个字典: {json_result}")
+                self.logger.error("解析后的JSON不是一个字典: %s", json_result)
                 return ["END()"]
 
             tools = json_result.get("tools", ["END()"])
             if not isinstance(tools, list):
-                print(f"[ERROR] 'tools' 字段不是一个列表: {tools}")
+                self.logger.error("'tools' 字段不是一个列表: %s", tools)
                 return ["END()"]
             return tools
         except Exception as e:
-            print(f"[ERROR] 解析意图JSON时发生未知错误: {e}")
+            self.logger.exception("解析意图JSON时发生未知错误: %s", e)
             return ["END()"]
  
     async def _agent_reset(self):
+        # 注意：不要清空已有的 display/full 上下文；使用已有上下文生成新的 system/judge 提示，保持续聊
         kwargs = {
             "userID": self.user_id,
             "session_dir": str(self.session.session_dir),
@@ -366,13 +461,14 @@ class EchoAgent:
             "current_date": datetime.now().strftime("%Y-%m-%d")
         }
         system_prompt = self.prompt_manager.get_system_prompt(**kwargs)
+        # 仅更新系统提示词到 conversations 开头，但不丢弃历史显示/全量上下文
         self.state_manager.init_conversations(system_prompt)
         judge_prompt = self.prompt_manager.get_judge_prompt(self.state_manager.full_context_conversations, **kwargs)
         # 保存judge_prompt到当前会话
         try:
             self.state_manager._conv_files["judge_prompt"].write_text(judge_prompt, encoding="utf-8")
         except Exception as e:
-            print(f"[ERROR] 写入judge_prompt失败: {e}")
+            self.state_manager.logger.exception("写入judge_prompt失败: %s", e)
         self.state_manager.conversations.append({"role": "user", "content": judge_prompt})
 
     async def process_query(self, question: str) -> AsyncGenerator[str, None]:
@@ -380,7 +476,8 @@ class EchoAgent:
         start_time = datetime.now()
         self.question_count += 1
         self.state_manager.add_message("user", question)
-        self.logger.info("收到用户问题", extra={"event": "user_question", "question_index": self.question_count, "question_preview": question[:200]})
+        # 将完整用户问题落日志（文本日志与JSON事件日志）
+        self.logger.info("收到用户问题: %s", question, extra={"event": "user_question", "question_index": self.question_count})
 
         # 初始化对话状态
         await self._agent_reset()
@@ -390,9 +487,9 @@ class EchoAgent:
         for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
             initial_response += char
             yield char
-        yield "\n"
         self.state_manager.add_message("assistant", initial_response)
-        self.logger.info("主模型初次回答完成", extra={"event": "llm_answer_end", "tokens": len(initial_response)})
+        # 记录智能体回答的完整内容
+        self.logger.info("主模型初次回答完成，内容: %s", initial_response, extra={"event": "llm_answer_end", "tokens": len(initial_response)})
 
         # 获取工具调用意图
         intention_tools = await self._get_tool_intention()
@@ -403,7 +500,7 @@ class EchoAgent:
         while self.STOP_SIGNAL not in intention_tools:
             try:
                 if not intention_tools:
-                    print("[ERROR] 意图工具列表为空，退出循环。")
+                    self.logger.error("意图工具列表为空，退出循环。")
                     break
                 
                 tool_call_str = intention_tools[0]
@@ -414,14 +511,14 @@ class EchoAgent:
 
                 # 添加类型检查以修复linter错误
                 if not isinstance(func_name, str):
-                    print(f"[ERROR] 无法从'{tool_call_str}'中解析出有效的工具名称，跳过。")
+                    self.logger.error("无法从'%s'中解析出有效的工具名称，跳过。", tool_call_str)
                     continue
 
                 # 解析参数
                 try:
                     params = parse_function_call(tool_call_str)["params"]
                 except Exception as e:
-                    print(f"[ERROR] 解析工具参数失败: {e}")
+                    self.logger.exception("解析工具参数失败: %s", e)
                     params = {}
 
                 # 如果是CodeRunner，代码从上一次的回复中提取
@@ -430,14 +527,47 @@ class EchoAgent:
                 
                 # 执行工具
                 self.params = params
-                print(f"[DEBUG] 执行工具: {func_name}")
+                self.logger.debug("执行工具: %s", func_name)
                 self.logger.info("开始执行工具", extra={"event": "tool_start", "tool": func_name, "params": params})
+                # —— 将“工具开始”作为结构化事件注入到SSE流（单行JSON，前缀标记，便于前端识别）——
+                try:
+                    import time as _time
+                    import json as _json
+                    tool_event = {
+                        "type": "tool_start",
+                        "tool_name": func_name,
+                        "tool_args": params,
+                        "timestamp": _time.time(),
+                        "content": f"开始调用 {func_name}"
+                    }
+                    yield f"[[TOOL_EVENT]]{_json.dumps(tool_event, ensure_ascii=False)}"
+                except Exception as _emit_err:
+                    self.logger.debug("工具开始事件注入失败: %s", _emit_err)
+                # 纯工具调用
                 tool_result = await self.tool_manager.execute_tool(func_name, **params)
                 self.logger.info("工具执行完成", extra={"event": "tool_end", "tool": func_name, "result_preview": str(tool_result)[:500]})
-                print(f"[DEBUG] 工具 '{func_name}' 返回结果长度: {len(str(tool_result))}")
+                self.logger.debug("工具 '%s' 返回结果长度: %s", func_name, len(str(tool_result)))
                 self.state_manager.add_message("tool", str(tool_result), stream_prefix=f"工具{func_name}返回结果:")
+
+                # TO DO：调用智能体执行回答
+
+                # —— 将“工具结果”作为结构化事件注入到SSE流（单行JSON，前缀标记，便于前端识别）——
+                try:
+                    import time as _time
+                    import json as _json
+                    tool_event_res = {
+                        "type": "tool_result",
+                        "tool_name": func_name,
+                        "timestamp": _time.time(),
+                        "status": "completed",
+                        "result": tool_result
+                    }
+                    yield f"[[TOOL_EVENT]]{_json.dumps(tool_event_res, ensure_ascii=False)}"
+                except Exception as _emit_err:
+                    self.logger.debug("工具结果事件注入失败: %s", _emit_err)
                 # 根据工具结果生成下一步响应
-                self.state_manager.add_message("user", TOOL_RESULT_ANA_PROMPT)
+                self.state_manager.add_message("react", TOOL_RESULT_ANA_PROMPT)
+
                 # 新增聊天记录并重置聊天轮数
                 await self._agent_reset()
                 next_response = ""
@@ -445,19 +575,19 @@ class EchoAgent:
                 for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
                     next_response += char
                     yield char
-                yield "\n"
                 self.state_manager.add_message("assistant", next_response)
-                self.logger.info("主模型分析完成", extra={"event": "llm_after_tool_end", "tokens": len(next_response)})
+                # 记录分析后的完整回答
+                self.logger.info("主模型分析完成，内容: %s", next_response, extra={"event": "llm_after_tool_end", "tokens": len(next_response)})
                 last_agent_response = next_response
                 # 获取下一个意图
                 intention_tools = await self._get_tool_intention()
                 tool_call_str = intention_tools[0]
-                print(f"[DEBUG] 下一个意图: {tool_call_str}")
+                self.logger.debug("下一个意图: %s", tool_call_str)
                 self.state_manager.save_all_conversations()
 
                 await self._agent_reset()
             except Exception as loop_error:
-                print(f"[ERROR] 工具循环中发生错误: {loop_error}")
+                self.logger.exception("工具循环中发生错误: %s", loop_error)
                 self.logger.exception("工具循环错误", extra={"event": "tool_loop_error", "error": str(loop_error)})
                 break
         
@@ -465,11 +595,12 @@ class EchoAgent:
         self.state_manager.save_all_conversations()
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        print(f"[DEBUG] 流程处理完成，耗时: {duration:.2f}秒")
+        self.logger.info("流程处理完成，耗时: %.2f 秒", duration)
         self.logger.info("流程处理完成", extra={"event": "query_done", "question_index": self.question_count, "duration_sec": duration})
 
     async def chat_loop(self):
         """启动交互式对话循环"""
+        logging.getLogger("agent.cli").info("下一代智能体已启动！")
         print("\n" + "="*60)
         print("🤖 下一代智能体已启动！")
         print("="*60)
@@ -480,14 +611,17 @@ class EchoAgent:
         
         while True:
             try:
+                logging.getLogger("agent.cli").info("等待用户输入问题")
                 print("\n" + "-"*40)
                 query = input("🧑 您: ").strip()
         
                 if query.lower() in ['quit', 'exit', 'q', '退出', '结束']:
+                    logging.getLogger("agent.cli").info("用户选择退出")
                     print("👋 感谢使用，再见！")
                     break
                 
                 if not query:
+                    logging.getLogger("agent.cli").warning("空输入")
                     print("⚠️ 请输入一些内容")
                     continue
                     
@@ -497,12 +631,15 @@ class EchoAgent:
                 print("\n")
                     
             except KeyboardInterrupt:
+                logging.getLogger("agent.cli").info("检测到 Ctrl+C，正在退出…")
                 print("\n\n👋 检测到 Ctrl+C，正在退出...")
                 break
             except EOFError:
+                logging.getLogger("agent.cli").info("检测到输入结束，正在退出…")
                 print("\n\n👋 检测到输入结束，正在退出...")
                 break
             except Exception as e:
+                logging.getLogger("agent.cli").exception("处理查询时发生错误: %s", e)
                 print(f"\n❌ 处理查询时发生错误: {str(e)}")
                 print("请重试或输入 'quit' 退出")
 
@@ -526,32 +663,38 @@ async def agent_chat_loop():
         await agent.chat_loop()
 
     except KeyboardInterrupt:
+        logging.getLogger("agent.cli").info("用户手动退出智能体对话")
         print("\n\n👋 用户手动退出智能体对话")
     except Exception as e:
+        logging.getLogger("agent.cli").exception("发生致命错误: %s", e)
         print(f"\n[FATAL ERROR] 发生致命错误: {e}")
         import traceback
         traceback.print_exc()
     finally:
         # 3. 清理资源 - 在事件循环关闭前进行
+        logging.getLogger("agent.cli").info("正在关闭智能体…")
         print("\n正在关闭智能体...")
         
         
         # 额外的延迟，确保所有后台任务完成
         await asyncio.sleep(0.2)
+        logging.getLogger("agent.cli").info("智能体已关闭，再见！👋")
         print("智能体已关闭，再见！👋")
 
 
 if __name__ == "__main__":
-
     try:
         asyncio.run(agent_chat_loop())
     except KeyboardInterrupt:
+        logging.getLogger("agent.cli").info("程序被用户中断")
         print("\n👋 程序被用户中断")
     except Exception as e:
+        logging.getLogger("agent.cli").exception("程序异常退出: %s", e)
         print(f"\n💥 程序异常退出: {e}")
         import traceback
         traceback.print_exc()
     finally:
+        logging.getLogger("agent.cli").info("程序已退出")
         print("程序已退出") 
 
 

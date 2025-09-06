@@ -125,25 +125,32 @@ await agent.chat_loop()
 
 ### 📚 Usage Guide
 
-#### Tool System
+#### Tool System (Pydantic + @tool)
 
-EchoAgent includes various built-in tools:
+We upgraded the tool system to use Pydantic-based schemas and a unified ToolRegistry. Define your tool as a function decorated with `@tool` and a Pydantic parameter model; the framework auto-generates JSON Schemas and executes tools with validated arguments.
 
-**CodeRunner - Code Executor**
+Quick example:
+
 ```python
-# User: Help me calculate the first 10 Fibonacci numbers
-# AI will answer directly, then automatically call CodeRunner to execute code
+from pydantic import BaseModel, Field
+from tools_agent.toolkit import tool
+
+class MyToolArgs(BaseModel):
+    question: str = Field(..., description="User question with context")
+
+@tool
+def my_tool(args: MyToolArgs):
+    return {"echo": args.question}
 ```
 
-**Document Processing Tools**
-- PDF reading and conversion
-- Document vectorization and retrieval
-- Image processing and OCR
+Register it in `agent_frame.py` inside `_register_local_tools`:
 
-**Data Analysis Tools**
-- Stock data retrieval
-- Financial report analysis
-- Data visualization
+```python
+from tools_agent.my_tools import my_tool
+self.tool_manager.register_tool_function(my_tool)
+```
+
+The schema will be included automatically in prompts; execution is routed via `ToolRegistry` with strict validation.
 
 ### Extending Development
 
@@ -323,7 +330,7 @@ Thanks to the following projects and communities for their support:
 
 - Submit Issues: [GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
 - Email: [Please add your email]
-- WeChat Group: [Please add QR code]
+- WeChat: ![WeChat QR Code](images/wechatID.jpg)
 
 ---
 

@@ -159,11 +159,13 @@ class FileManager:
         base = session.conversations_dir
         return {
             "system_prompt": base / "agent_system_prompt.md",
+            "tool_system_prompt": base / "tool_system_prompt.md",
             "judge_prompt": base / "judge_prompt.md",
             "conversations": base / "conversations.json",
             "display": base / "display_conversations.md",
             "full": base / "full_context_conversations.md",
             "tools": base / "tool_conversations.json",
+            "tool_execute": base / "tool_execute_conversations.md",
         }
 
     # ======== 日志 ========
@@ -217,7 +219,15 @@ class FileManager:
                 setattr(record, "agent_name", session.agent_name)
                 return True
 
-        logger.addFilter(_CtxFilter())
+        # 重要: 既要给 logger 添加过滤器, 也要给每个 handler 添加
+        # 这样可确保子 logger 通过父 handler 输出时, 记录在格式化前也拥有所需字段
+        ctx_filter = _CtxFilter()
+        logger.addFilter(ctx_filter)
+        console.addFilter(ctx_filter)
+        file_handler.addFilter(ctx_filter)
+        error_handler.addFilter(ctx_filter)
+        json_handler.addFilter(ctx_filter)
+
         logger.addHandler(console)
         logger.addHandler(file_handler)
         logger.addHandler(error_handler)

@@ -9,13 +9,15 @@ AGENT_TOOLS_GUIDE = dedent(
       示例：保存图片时，路径可能为：image_path = "files\ada\echo_agent\20250903-180545-304578\temp\plot.png"
       保存时代码即为：plt.savefig(image_path)
    会话路径文件夹结构：
+   ├─files\ada\echo_agent\20250903-180545-304578
       ├─ artifacts/             # 模型/工具产生的中间产物
       ├─ uploads/               # 用户上传内容
       ├─ outputs/               # 面向用户的最终输出
       ├─ images/                # 保存图片
       └─ temp/                  # 临时文件
+   - 编写代码时，如果需要绘图，请编写保存图片的代码，不要展示图片。
    """
-).strip()
+).strip().replace("  ", "")
 
 # Agent框架运行特点
 FRAMEWORK_RUNNING_CHARACTER = dedent(
@@ -42,7 +44,7 @@ FRAMEWORK_RUNNING_CHARACTER = dedent(
    此时系统会调用工具，并提供工具的输出，你再执行下一步
 
    """
-).strip()
+).strip().replace("  ", "")
 
 #########################
 ## Agent规划提示词 ##
@@ -60,11 +62,13 @@ AGENT_SYSTEM_PROMPT = dedent("""
    {AGENT_TOOLS_GUIDE}
    ---
 
-""").strip()
+""").strip().replace("  ", "")
 
 AGENT_JUDGE_PROMPT = dedent("""
    # 我的会话目录
    {session_dir}
+   ---
+   注意：执行代码过程中的数据保存路径必须在上面的目录下！
 
    # 我的会话目录下的文件
    {files}
@@ -77,7 +81,7 @@ AGENT_JUDGE_PROMPT = dedent("""
    ---
    
     现在，请回答我的问题或者判断接下来做什么：
-""").strip()
+""").strip().replace("  ", "")
 
 
 #########################
@@ -90,11 +94,10 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    # 示例
    我的问题: 阅读我的论文XXX,总结主要内容
    你的输出:
-   ```json
    {{
       "tools": ["read_pdf(paper_path='论文XXX.pdf')"]
    }}
-   ```
+   
    # 背景信息
    ## 用户ID
    {userID}
@@ -128,11 +131,9 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    ## 情况1
    任务已经完成了，你的输出：
    根据上文的分析,当前我们的任务是：XXX,前文中我们已经写好了XXXX,所以目前已经解决。
-   ```json
    {{
       "tools": ["END()"]
    }}
-   ```
 
    # 要求
    - 你需要根据最后一个assistant的指示给出文字分析判断任务是否已经完成,给出json工具.如果任务已经完成，或者需要等待我的指示，你都输出END()
@@ -145,11 +146,9 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    ---
    上文：我需要您提供XXXX
    你：根据上文,现在需要你的指示,所以输出END()
-   ```json
    {{
       "tools": ["END()"]
    }}
-   ```
 
    # 我与你的聊天记录
    {conversation}
@@ -158,16 +157,14 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    现在,我问你,我的问题是否已经解决？特别强调：你需要复述一遍上述聊天记录的最后一次assistant的指示选择工具。如：
    assistant：现在我需要运行代码
    你：根据assistant指引,我们现在要运行代码,所以需要调用工具：CodeRunner
-   ```json
    {{
       "tools": ["CodeRunner()"]
    }}
-   ```
    ---
    如果解决了,则输出END()；如果还没解决,则输出json工具；
    
    现在，请根据assistant的指引，告诉我接下来要做什么：
-""").strip()
+""").strip().replace("  ", "")
 
 TOOL_RESULT_ANA_PROMPT = """刚刚你执行了工具，请做出反应："""
 

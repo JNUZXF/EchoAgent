@@ -472,7 +472,7 @@ class CodeExecutor:
                 'success': True,
                 'result': result,
                 'stdout': stdout_output,
-                'stderr': stderr_output,
+                # 'stderr': stderr_output,
                 'error': None,
                 'execution_time': execution_time,
                 'code_lines': code_lines
