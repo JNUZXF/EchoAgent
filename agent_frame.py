@@ -354,7 +354,8 @@ class AgentPromptManager:
             session_dir=kwargs.get("session_dir", ""),
             files=kwargs.get("files", ""),
             agent_name=kwargs.get("agent_name", ""),
-            current_date=datetime.now().strftime("%Y-%m-%d")
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+            tools=kwargs.get("tool_configs", "")
         )
 
     def get_intention_prompt(self, **kwargs) -> str:
@@ -458,7 +459,8 @@ class EchoAgent:
             "session_dir": str(self.session.session_dir),
             "files": self.state_manager.list_user_files(),
             "agent_name": self.config.agent_name,
-            "current_date": datetime.now().strftime("%Y-%m-%d")
+            "current_date": datetime.now().strftime("%Y-%m-%d"),
+            "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt()
         }
         system_prompt = self.prompt_manager.get_system_prompt(**kwargs)
         # 仅更新系统提示词到 conversations 开头，但不丢弃历史显示/全量上下文

@@ -28,7 +28,7 @@ EchoAgent is an innovative agent framework that adopts a unique "**Answer First-
 - **🔄 Dual Model Collaboration**: Main model handles answers, decision model handles tool calling judgments
 - **⚡ Rapid Response**: Provides direct answers first, then processes deeply as needed
 - **🛡️ Safe Execution**: Built-in code executor with secure Python code execution
-- **🔧 Tool Ecosystem**: Rich toolset supporting document processing, data analysis, web search, etc.
+- **🔧 Tool Ecosystem**: Rich toolset supporting document processing, data analysis, web search, and enhanced ArXiv paper retrieval with batch processing and resume functionality
 - **📊 Persistent Context**: Cross-conversation variable persistence, supporting continuous data analysis tasks
 - **🎯 Intelligent Termination**: Smart task completion judgment through `END()` signals
 
@@ -151,6 +151,48 @@ self.tool_manager.register_tool_function(my_tool)
 ```
 
 The schema will be included automatically in prompts; execution is routed via `ToolRegistry` with strict validation.
+
+### 📚 Enhanced ArXiv Paper Retrieval
+
+The framework includes a robust ArXiv paper retrieval system with the following improvements:
+
+#### Key Features
+- **🔄 Batch Processing**: Handles large-scale searches (1000+ papers) by splitting into manageable batches
+- **💾 Resume Functionality**: Automatic progress saving and resume capability for interrupted searches
+- **🛡️ Error Handling**: Enhanced retry mechanisms and API limit management
+- **📊 Detailed Logging**: Comprehensive logging with file output for debugging
+- **🎯 Multi-field Search**: Support for title, author, abstract, and category-based searches
+
+#### Usage Example
+```python
+from agent_cases.research_agent.arxiv_search import ArxivSearcher, SearchField
+
+# Initialize with batch processing
+searcher = ArxivSearcher(
+    download_dir="./arxiv_papers", 
+    max_workers=3,
+    batch_size=500  # Process 500 papers per batch
+)
+
+# Large-scale search with resume capability
+papers, stats = searcher.search_and_download(
+    query="agent",
+    search_field=SearchField.TITLE,
+    search_num=3000,  # Can handle thousands of papers
+    sort_by=arxiv.SortCriterion.LastUpdatedDate,
+    download=False  # Search first, download later
+)
+
+# Resume interrupted search
+if searcher.progress_file.exists():
+    papers = searcher.resume_search()
+```
+
+#### Improvements Made
+- **API Limit Management**: Increased delays and smaller batch sizes to avoid ArXiv API restrictions
+- **Progress Persistence**: Automatic saving of search progress with JSON-based recovery
+- **Enhanced Error Recovery**: Multiple retry strategies for different types of failures
+- **Intelligent Batching**: Adaptive batch sizing based on API responses
 
 ### Extending Development
 

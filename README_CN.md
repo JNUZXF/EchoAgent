@@ -28,7 +28,7 @@ EchoAgent 是一个创新的智能体框架，采用独特的"**先回答-再判
 - **🔄 双模型协同**: 主模型负责回答，决策模型负责判断工具调用
 - **⚡ 快速响应**: 先给出直接回答，再根据需要深入处理
 - **🛡️ 安全执行**: 内置代码执行器，支持安全的 Python 代码运行
-- **🔧 工具生态**: 丰富的工具集，支持文档处理、数据分析、网络搜索等
+- **🔧 工具生态**: 丰富的工具集，支持文档处理、数据分析、网络搜索等，以及增强的ArXiv论文检索系统，支持批量处理和断点续传
 - **📊 持久化上下文**: 跨对话的变量保持，支持连续的数据分析任务
 - **🎯 智能终止**: 通过 `END()` 信号实现智能的任务完成判断
 
@@ -144,6 +144,48 @@ EchoAgent 内置多种工具：
 - 股票数据获取
 - 财务报表分析
 - 数据可视化
+
+### 📚 增强的ArXiv论文检索系统
+
+框架包含一个强大的ArXiv论文检索系统，具有以下改进：
+
+#### 主要特性
+- **🔄 批量处理**: 通过分批处理支持大规模搜索（1000+篇论文）
+- **💾 断点续传**: 自动进度保存和恢复功能，支持中断后继续
+- **🛡️ 错误处理**: 增强的重试机制和API限制管理
+- **📊 详细日志**: 全面的日志记录，支持文件输出便于调试
+- **🎯 多字段搜索**: 支持标题、作者、摘要和类别的组合搜索
+
+#### 使用示例
+```python
+from agent_cases.research_agent.arxiv_search import ArxivSearcher, SearchField
+
+# 初始化批量处理搜索器
+searcher = ArxivSearcher(
+    download_dir="./arxiv_papers", 
+    max_workers=3,
+    batch_size=500  # 每批处理500篇论文
+)
+
+# 大规模搜索，支持断点续传
+papers, stats = searcher.search_and_download(
+    query="agent",
+    search_field=SearchField.TITLE,
+    search_num=3000,  # 可处理数千篇论文
+    sort_by=arxiv.SortCriterion.LastUpdatedDate,
+    download=False  # 先搜索，后下载
+)
+
+# 恢复中断的搜索
+if searcher.progress_file.exists():
+    papers = searcher.resume_search()
+```
+
+#### 主要改进
+- **API限制管理**: 增加延迟和较小批次大小，避免ArXiv API限制
+- **进度持久化**: 基于JSON的自动进度保存和恢复
+- **增强错误恢复**: 针对不同类型故障的多重重试策略
+- **智能批处理**: 根据API响应自适应调整批次大小
 
 ### 扩展开发
 

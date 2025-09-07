@@ -81,6 +81,7 @@ user_data/
 uploads/
 downloads/
 data/
+agent_cases/
 
 # 向量数据库和模型文件
 *.pkl
@@ -168,3 +169,7 @@ financial_reports/
 # 文档生成
 site/
 docs/_build/
+
+# github projects
+github_agents/
+TODO/
