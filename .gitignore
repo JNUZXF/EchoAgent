@@ -173,3 +173,13 @@ docs/_build/
 # github projects
 github_agents/
 TODO/
+docs/
+
+# in progress
+EchoMAS.py
+test_echo_agent.py
+test_original_agent.py
+tool_test_lo
+tools_configs.py
+
+

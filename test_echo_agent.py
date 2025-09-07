@@ -66,10 +66,10 @@ async def main() -> None:
 给我写一个Python算法模拟两只股票的真实走势，画出走势图    
 """
 
-    print("\n>>> Streaming answer start\n")
+    print("\n>>>>>>>>>>>>>>>>>>>>>>>>\n")
     async for chunk in agent.process_query(user_query):
         print(chunk, end="", flush=True)
-    print("\n\n>>> Streaming answer end\n")
+    print("\n\n>>>>>>>>>>>>>>>>>>>>>\n")
 
 
 if __name__ == "__main__":
