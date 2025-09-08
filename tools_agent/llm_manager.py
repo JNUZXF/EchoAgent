@@ -614,69 +614,7 @@ class LLMManager:
     
     def generate_stream_conversation(self, conversations: List[Dict[str, Any]], temperature: float = 0.5) -> Generator[str, None, None]:
         return self.provider.generate_stream_conversation(conversations, temperature)
-        
-    def generate_with_buffer(self, question: str, temperature: float = 0.95, 
-                         speed: float = 0.01, batch_size: int = 1) -> None:
-        """使用缓冲器进行更平滑的流式输出
-        
-        Args:
-            question: 输入的问题
-            temperature: 温度参数
-            speed: 输出速度（字符间延迟，秒）
-            batch_size: 一次输出多少个字符
-        """
-        buffer = StreamBuffer(speed=speed, batch_size=batch_size)
-        buffer.start()
-        
-        try:
-            # 获取标准的流式响应
-            response_stream = self.generate_stream(question, temperature)
-            
-            # 添加到缓冲区
-            for chunk in response_stream:
-                if chunk:
-                    buffer.add_text(chunk)
-            
-            # 等待缓冲区清空
-            while not buffer.buffer.empty():
-                time.sleep(0.1)
-        finally:
-            buffer.stop()
-        
-        print()  # 最后换行
-
-    def generate_conversation_with_buffer(self, conversations: List[Dict[str, Any]], 
-                                     temperature: float = 0.95, 
-                                     speed: float = 0.01, 
-                                     batch_size: int = 1) -> None:
-        """使用缓冲器进行更平滑的对话流式输出
-        
-        Args:
-            conversations: 对话历史
-            temperature: 温度参数
-            speed: 输出速度（字符间延迟，秒）
-            batch_size: 一次输出多少个字符
-        """
-        buffer = StreamBuffer(speed=speed, batch_size=batch_size)
-        buffer.start()
-        
-        try:
-            # 获取标准的流式响应
-            response_stream = self.generate_stream_conversation(conversations, temperature)
-            
-            # 添加到缓冲区
-            for chunk in response_stream:
-                if chunk:
-                    buffer.add_text(chunk)
-            
-            # 等待缓冲区清空
-            while not buffer.buffer.empty():
-                time.sleep(0.1)
-        finally:
-            buffer.stop()
-        
-        print()  # 最后换行
-    
+           
     def generate_char_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         """生成字符级的流式响应，每次只产出一个字符
         
@@ -707,56 +645,18 @@ class LLMManager:
         # 使用Provider基类提供的字符级处理
         return self.provider.char_level_stream(response_stream)
         
-    def print_char_stream(self, question: str, temperature: float = 0.95, delay: float = 0.01) -> None:
-        """打印字符级流式输出，带有打字效果
-        
-        Args:
-            question: 输入的问题
-            temperature: 温度参数
-            delay: 字符间的延迟（秒）
-        """
-        char_stream = self.generate_char_stream(question, temperature)
-        for char in char_stream:
-            print(char, end="", flush=True)
-            time.sleep(delay)
-        print()  # 最后换行
-        
-    def print_char_conversation(self, conversations: List[Dict[str, Any]], temperature: float = 0.95, delay: float = 0.01) -> None:
-        """打印字符级对话流式输出，带有打字效果
-        
-        Args:
-            conversations: 对话历史
-            temperature: 温度参数
-            delay: 字符间的延迟（秒）
-        """
-        char_stream = self.generate_char_conversation(conversations, temperature)
-        for char in char_stream:
-            print(char, end="", flush=True)
-            time.sleep(delay)
-        print()  # 最后换行
-
 # 使用示例
 if __name__ == "__main__":
-    # 示例1：使用缓冲区的平滑输出 (doubao-seed)
-    print("\n=== 使用缓冲区的平滑输出示例 (doubao-seed) ===")
-    llm_seed = LLMManager("doubao-seed-1-6-250615")
-    llm_seed.generate_with_buffer("你好，请做个自我介绍", speed=0.01, batch_size=2)
-
-    # 示例2：使用缓冲区的平滑输出 (gemini)
-    print("\n=== 使用缓冲区的平滑输出示例 (gemini) ===")
-    llm = LLMManager("gemini-2.0-flash")
-    llm.generate_with_buffer("解释一下量子力学的基本原理", speed=0.01, batch_size=2)
-    
-    # 示例3：字符级流式输出
+    # 示例：字符级流式输出
     print("\n=== 字符级流式输出示例 ===")
     llm = LLMManager("gemini-2.0-flash")
     llm.print_char_stream("简要介绍人工智能的发展历史", delay=0.02)
     
-    # 示例4：多轮对话
+    # 示例：多轮对话
     print("\n=== 多轮对话示例 ===")
     conversations = [
         {"role": "system", "content": "你是一个专业的科学顾问。"},
         {"role": "user", "content": "解释一下黑洞的霍金辐射"}
     ]
-    llm = LLMManager("gemini-2.0-flash")
+    llm = LLMManager("gemini-2.-flash")
     llm.print_char_conversation(conversations, delay=0.015) 

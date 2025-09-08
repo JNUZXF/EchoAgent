@@ -1,0 +1,16 @@
+{
+  "custom_fields": {
+    "research_plan": {
+      "title": "2025 企业智能体研究计划",
+      "focus": [
+        "多智能体协作",
+        "上下文共享"
+      ],
+      "owner": "R&D Lab"
+    }
+  },
+  "success": false,
+  "execution_time": 0.0010004043579101562,
+  "stdout": "",
+  "error": "NameError: name 'open' is not defined\n\n详细错误信息:\nTraceback (most recent call last):\n  File \"d:\\AgentBuilding\\my_agent_frame\\utils\\code_runner.py\", line 455, in execute\n    result, stdout_output, stderr_output = self._execute_with_timeout(code, global_vars)\n                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"d:\\AgentBuilding\\my_agent_frame\\utils\\code_runner.py\", line 383, in _execute_with_timeout\n    raise exception_queue.get()\n  File \"d:\\AgentBuilding\\my_agent_frame\\utils\\code_runner.py\", line 345, in target\n    exec(compiled_code, global_vars)\n  File \"<string>\", line 29, in <module>\nNameError: name 'open' is not defined\n"
+}

@@ -43,9 +43,16 @@ class SessionInfo:
     agent_name: str
     session_id: str
     root_dir: Path
+    # 标记是否为workspace模式：此时root_dir指向 workspaces/{user}/{workspace}
+    # 而非 files 根目录
+    is_workspace: bool = False
 
     @property
     def session_dir(self) -> Path:
+        if self.is_workspace:
+            # workspaces/{user}/{workspace}/{agent}/{session_id}
+            return self.root_dir / _sanitize_for_fs(self.agent_name) / self.session_id
+        # files/{user}/{agent}/{session_id}
         return self.root_dir / _sanitize_for_fs(self.user_id) / _sanitize_for_fs(self.agent_name) / self.session_id
 
     @property
@@ -97,10 +104,8 @@ class FileManager:
         if hasattr(self, "_initialized") and self._initialized:
             return
         self.project_root: Path = _get_project_root()
-        default_root = self.project_root / "files"
-        env_root = os.environ.get("AGENT_FILES_ROOT", str(default_root))
-        self.files_root: Path = Path(env_root).resolve()
-        self.files_root.mkdir(parents=True, exist_ok=True)
+        self.workspaces_root: Path = self.project_root / "workspaces"
+
         self._session_loggers: Dict[str, logging.Logger] = {}
         # 日志可配置参数
         self.log_max_bytes: int = int(os.environ.get("AGENT_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
@@ -110,17 +115,33 @@ class FileManager:
         self._initialized = True
 
     # ======== 会话与路径 ========
-    def create_session(self, user_id: str, agent_name: str, session_id: Optional[str] = None) -> SessionInfo:
+    def create_session(self, user_id: str, agent_name: str, session_id: Optional[str] = None, workspace: Optional[str] = None) -> SessionInfo:
         """
         创建会话目录结构: files/{user_id}/{agent_name}/{session_id}/
         子目录: logs/, conversations/, artifacts/, uploads/, outputs/, temp/
         并写入最新会话指针 latest.json
         """
+        if workspace:
+            # 根目录只到 workspace，避免后续再拼 user/agent 重复
+            default_root = self.workspaces_root / user_id / workspace
+        else:   
+            default_root = self.project_root / "files"
+        
+        env_root = os.environ.get("AGENT_FILES_ROOT", str(default_root))
+        self.files_root: Path = Path(env_root).resolve()
+        self.files_root.mkdir(parents=True, exist_ok=True)
+        
         safe_user = _sanitize_for_fs(user_id)
         safe_agent = _sanitize_for_fs(agent_name)
         if not session_id:
             session_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        info = SessionInfo(user_id=safe_user, agent_name=safe_agent, session_id=session_id, root_dir=self.files_root)
+        info = SessionInfo(
+            user_id=safe_user,
+            agent_name=safe_agent,
+            session_id=session_id,
+            root_dir=self.files_root,
+            is_workspace=bool(workspace),
+        )
 
         # 创建目录
         for d in [
@@ -136,7 +157,12 @@ class FileManager:
             d.mkdir(parents=True, exist_ok=True)
 
         # latest 指针
-        latest_file = self.files_root / safe_user / safe_agent / "latest.json"
+        if workspace:
+            # workspaces/{user}/{workspace}/{agent}/latest.json
+            latest_file = self.files_root / safe_agent / "latest.json"
+        else:
+            # files/{user}/{agent}/latest.json
+            latest_file = self.files_root / safe_user / safe_agent / "latest.json"
         latest_file.parent.mkdir(parents=True, exist_ok=True)
         latest_file.write_text(json.dumps({"session_id": session_id}, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -166,6 +192,7 @@ class FileManager:
             "full": base / "full_context_conversations.md",
             "tools": base / "tool_conversations.json",
             "tool_execute": base / "tool_execute_conversations.md",
+            "team_context": base / "team_context.json",
         }
 
     # ======== 日志 ========

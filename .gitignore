@@ -7,7 +7,11 @@ test_echo_agent.py
 test_original_agent.py
 tool_test_locate_pdf_text.py
 tools_configs.py
+test_llm_api.py
 docs/
+
+# 测试功能，以test_开头的Python文件
+test_*.py
 
 # Python 相关
 __pycache__/

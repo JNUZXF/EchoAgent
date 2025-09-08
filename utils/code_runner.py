@@ -14,6 +14,8 @@ import signal
 import types
 import ast
 import builtins
+import os
+from pathlib import Path
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, Tuple, List
 import threading
@@ -99,7 +101,6 @@ class CodeExecutor:
                 'html', 'email', 'mimetypes',
                 # 文件操作库
                 'os', 'shutil', 'pathlib', 'glob',
-                'open', 'file', 'input', 'raw_input',
                 # 其他常用库
                 'PIL', 'cv2', 'tqdm', 'joblib', 'pickle',
                 'gzip', 'zipfile', 'tarfile', 'io', 
@@ -156,8 +157,69 @@ class CodeExecutor:
             return __import__(name, globals, locals, fromlist, level)
 
         safe_builtins['__import__'] = safe_import
+        
+        # 计算允许的文件系统根目录（仅允许在项目 workspaces/ 与 files/ 内读写）
+        self.allowed_roots = self._compute_allowed_roots()
+
+        # 受控的 open：限制访问路径与模式，默认文本utf-8
+        def safe_open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
+            file_path = Path(str(file)).resolve()
+            is_write_mode = any(flag in mode for flag in ['w', 'a', 'x', '+'])
+            is_binary = 'b' in mode
+            
+            # 限制路径范围
+            if not self._is_path_allowed(file_path):
+                raise SecurityError(f"尝试访问未被允许的路径: {file_path}")
+            
+            # 限制二进制写入
+            if is_write_mode and is_binary:
+                raise SecurityError("不允许二进制写入。请使用文本模式并指定编码")
+            
+            # 写入时自动创建父目录
+            if is_write_mode:
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                if 'b' not in mode and encoding is None:
+                    encoding = 'utf-8'
+            
+            return builtins.open(str(file_path), mode, buffering=buffering, encoding=encoding, errors=errors, newline=newline, closefd=closefd, opener=opener)
+
+        # 注入受控的 open
+        safe_builtins['open'] = safe_open
 
         self.safe_builtins = safe_builtins
+
+    def _compute_allowed_roots(self) -> List[Path]:
+        """计算允许读写的根目录：项目根下的 workspaces/ 与 files/"""
+        project_root: Optional[Path] = None
+        try:
+            from utils.file_manager import FileManager  # 复用现有项目根解析
+            project_root = FileManager().project_root
+        except Exception:
+            current = Path(__file__).resolve()
+            for parent in current.parents:
+                if (parent / 'README.md').exists():
+                    project_root = parent
+                    break
+            if project_root is None:
+                project_root = current.parent.parent
+        return [
+            (project_root / 'workspaces').resolve(),
+            (project_root / 'files').resolve(),
+        ]
+
+    def _is_path_allowed(self, path: Path) -> bool:
+        """校验目标路径是否位于允许根目录内"""
+        try:
+            path = path.resolve()
+        except Exception:
+            return False
+        for root in getattr(self, 'allowed_roots', []):
+            try:
+                path.relative_to(root)
+                return True
+            except Exception:
+                continue
+        return False
     
     def reset_context(self):
         """

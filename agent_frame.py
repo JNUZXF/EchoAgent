@@ -489,6 +489,7 @@ class EchoAgent:
         for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
             initial_response += char
             yield char
+        yield "\n"
         self.state_manager.add_message("assistant", initial_response)
         # 记录智能体回答的完整内容
         self.logger.info("主模型初次回答完成，内容: %s", initial_response, extra={"event": "llm_answer_end", "tokens": len(initial_response)})

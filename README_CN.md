@@ -42,7 +42,7 @@ graph TD
     D -->|"是"| E["调用工具"]
     D -->|"否"| F["输出 END()"]
     E --> G["工具执行结果"]
-    G --> H["更新上下文"]
+    G --> H["更新上下文 (含 TeamContext)"]
     H --> I["主模型分析结果"]
     I --> C
     F --> J["任务完成"]
@@ -140,6 +140,10 @@ EchoAgent 内置多种工具：
 - 文档向量化和检索
 - 图像处理和OCR
 
+#### ReAgent 变量传参与共享指南
+
+详见文档：`docs/ReAgent_变量传参与共享指南.md`（包含“初始化传入公司研究计划、对话、更新计划、SubAgent 共享读取”的完整示例）。
+
 **数据分析工具**
 - 股票数据获取
 - 财务报表分析
@@ -207,6 +211,40 @@ agent.tool_manager.register_local_tool(
     tool_config_for_prompt
 )
 ```
+
+### 🤝 多智能体共享上下文（TeamContext）
+
+- 共享变量组合通过 `TeamContext` 管理，落盘在会话目录的 `conversations/team_context.json`。
+- 系统提示会自动注入当前的 TeamContext，工具结果可自动合并上下文增量。
+
+最小示例：
+
+```python
+from agent_frame_v3_0908 import EchoAgent, AgentConfig
+
+config = AgentConfig(
+    user_id="ada",
+    main_model="doubao-pro",
+    tool_model="doubao-pro",
+    flash_model="doubao-pro",
+    agent_name="echo_agent",
+)
+agent = EchoAgent(config)
+
+agent.set_team_goal("完善多Agent协作Demo")
+agent.update_team_context({
+    "objectives": ["定义角色", "实现共享上下文"],
+    "next_actions": ["联动工具输出到上下文"]
+})
+
+# 可选：设置跨Agent共享的外部文件
+# agent.set_team_context_override_path("./shared/team_context.json")
+
+# 之后正常对话/调用，系统提示将带有 TeamContext
+# await agent.chat_loop()
+```
+
+详细说明与流程图见文档：`docs/多智能体共享上下文设计与流程图.md`。
 
 3. **更新工具配置**
 在 `tools_configs.py` 中添加工具描述。

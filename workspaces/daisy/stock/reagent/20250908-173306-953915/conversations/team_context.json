@@ -1,0 +1,27 @@
+{
+  "custom_fields": {
+    "research_plan": {
+      "title": "2025 企业智能体研究计划",
+      "focus": [
+        "多智能体协作",
+        "上下文共享",
+        "知识检索与行动"
+      ],
+      "milestones": [
+        {
+          "m": "Q1",
+          "goal": "完成多Agent协作PoC"
+        },
+        {
+          "m": "Q2",
+          "goal": "部署试点并采集指标"
+        }
+      ],
+      "owner": "R&D Lab",
+      "kpis": {
+        "poc_success": 1,
+        "pilot_users": 50
+      }
+    }
+  }
+}

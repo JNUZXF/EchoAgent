@@ -30,6 +30,7 @@ EchoAgent is an innovative agent framework that adopts a unique "**Answer First-
 - **🛡️ Safe Execution**: Built-in code executor with secure Python code execution
 - **🔧 Tool Ecosystem**: Rich toolset supporting document processing, data analysis, web search, and enhanced ArXiv paper retrieval with batch processing and resume functionality
 - **📊 Persistent Context**: Cross-conversation variable persistence, supporting continuous data analysis tasks
+- **🔄 Context Separation**: Smart separation between agent conversation context and code execution context, preventing variable pollution while maintaining code persistence
 - **🎯 Intelligent Termination**: Smart task completion judgment through `END()` signals
 
 ### 🏗️ Architecture Design
@@ -151,6 +152,39 @@ self.tool_manager.register_tool_function(my_tool)
 ```
 
 The schema will be included automatically in prompts; execution is routed via `ToolRegistry` with strict validation.
+
+#### Code Execution Context Management
+
+The framework provides intelligent separation between agent conversation context and code execution persistence:
+
+**Built-in Code Tools:**
+- **CodeRunner**: Execute Python code with persistent variable context
+- **ViewCodeContext**: Inspect current persistent variables
+- **ResetCodeContext**: Clear code execution context when needed
+
+**Key Benefits:**
+- **Clean Conversations**: Agent conversations show execution summaries, not detailed variable dumps
+- **Code Persistence**: Variables persist across multiple code executions for iterative development
+- **Context Control**: Users can inspect and reset code context as needed
+
+**Example Usage:**
+```python
+# First execution - creates variables
+CodeRunner({"code": "import pandas as pd\ndf = pd.DataFrame({'A': [1,2,3]})"})
+# Returns: {'success': True, 'result_summary': 'DataFrame (shape: (3, 1))', 'persistent_variables_count': 2}
+
+# Second execution - uses previous variables  
+CodeRunner({"code": "df['B'] = [4,5,6]\nprint(df)"})
+# Variables 'pd' and 'df' are still available from previous execution
+
+# Check what variables are available
+ViewCodeContext({"show_details": True})
+# Returns: {'variables': {'pd': 'module', 'df': {'type': 'DataFrame', 'info': 'shape: (3, 2)'}}}
+
+# Reset when starting fresh
+ResetCodeContext({"confirm": True})
+# Clears all persistent variables
+```
 
 ### 📚 Enhanced ArXiv Paper Retrieval
 
@@ -275,6 +309,8 @@ EchoAgent automatically creates a session-scoped directory on each agent start, 
 - Convenience pointer: `files/{user_id}/{agent_name}/latest.json` stores latest `session_id`
 
 See detailed guide: [docs/FileManagement.md](docs/FileManagement.md)
+
+Tip: To isolate multi-project work or enable team spaces, pass `workspace` when constructing `AgentConfig`. When set, all sessions and artifacts are stored under `workspaces/{user}/{workspace}/{agent}` instead of `files/...`. Details: [Workspace mode](docs/FileManagement.md#workspace-工作空间模式多项目多团队隔离)
 
 ### 🧾 Production-grade Logging
 

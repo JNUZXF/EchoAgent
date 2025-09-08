@@ -60,6 +60,9 @@ AGENT_SYSTEM_PROMPT = dedent("""
 
    # 你的工具
    {AGENT_TOOLS_GUIDE}
+
+   # 你需要遵守的规则
+   {user_system_prompt}
    ---
 
 """).strip().replace("  ", "")
