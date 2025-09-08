@@ -1,6 +1,14 @@
 # 文件路径: .gitignore
 # 功能: 排除不需要版本控制的文件和目录，保护敏感信息
 
+# in progress
+EchoMAS.py
+test_echo_agent.py
+test_original_agent.py
+tool_test_locate_pdf_text.py
+tools_configs.py
+docs/
+
 # Python 相关
 __pycache__/
 *.py[cod]
@@ -175,11 +183,6 @@ github_agents/
 TODO/
 docs/
 
-# in progress
-EchoMAS.py
-test_echo_agent.py
-test_original_agent.py
-tool_test_lo
-tools_configs.py
+
 
 
