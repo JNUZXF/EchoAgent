@@ -24,14 +24,20 @@ def get_global_code_executor() -> CodeExecutor:
 
 class CodeRunnerArgs(BaseModel):
     """CodeRunner 工具的参数模型"""
-    code: Optional[str] = Field(default=None, description="要执行的 Python 代码字符串; 若为空, 将由上文响应中提取")
-    timeout: float = Field(default=60.0, description="执行超时时间(秒)")
+    code: Optional[str] = Field(default=None, description="空字符串，代码已经从前文提取")
+    # timeout: float = Field(default=60.0, description="执行超时时间(秒)")
     use_persistent: bool = Field(default=True, description="是否启用持久化上下文")
 
 
 @tool
 def CodeRunner(args: CodeRunnerArgs):
-    """执行 Python 代码, 返回格式化后的结果摘要。内部维持代码持久化上下文，但不暴露给智能体对话上下文。"""
+    """
+    执行 Python 代码。
+    示例用法：
+    Assistant：接下来要运行代码
+    你的输出：
+    {{"tools": ["CodeRunner(code="")"]}}
+    """
     # 【持久化上下文】使用全局实例确保跨调用持久化
     executor = get_global_code_executor()
     # 更新超时设置（如果需要）

@@ -9,9 +9,11 @@ tool_test_locate_pdf_text.py
 tools_configs.py
 test_llm_api.py
 docs/
+TODO-IDEAS/
 
 # 测试功能，以test_开头的Python文件
 test_*.py
+workspaces/
 
 # Python 相关
 __pycache__/

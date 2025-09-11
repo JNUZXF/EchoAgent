@@ -1,6 +1,6 @@
 """
 智能体主框架
-文件路径: agent/agent_frame.py
+文件路径: agent_frame_v4.py
 功能: 根据用户的需求，自主调用工具（1轮/多轮）/直接回答问题
 
 这个模块实现了一个完整的智能体框架，包括：
@@ -35,8 +35,7 @@ from tools_agent.parse_function_call import parse_function_call
 from tools_agent.json_tool import get_json
 from tools_agent.llm_manager import LLMManager
 
-from utils.code_runner import CodeExecutor, extract_python_code
-from utils.agent_tool_continue_analyze import ContinueAnalyze
+from utils.code_runner import extract_python_code
 from utils.file_manager import file_manager, SessionInfo
 
 from prompts.agent_prompts import (
@@ -61,6 +60,96 @@ MODULE_LOGGER.info("AgentCoder模块加载完成")
 ConversationHistory = List[Dict[str, str]]
 ToolConfig = Dict[str, Any]
 ToolResult = Any
+
+# ========== Pydantic 模型定义 ==========
+try:
+    from pydantic import BaseModel, Field, ValidationError
+    from pydantic import ConfigDict
+    from typing import Literal
+except Exception:
+    # 允许在无 pydantic 环境下继续运行（不会启用校验）
+    BaseModel = object  # type: ignore
+    Field = lambda *args, **kwargs: None  # type: ignore
+    ValidationError = Exception  # type: ignore
+    ConfigDict = dict  # type: ignore
+    from typing import Literal  # type: ignore
+
+
+class ToolEventModel(BaseModel):
+    """
+    工具事件结构（用于统一生成/校验工具事件并序列化为前端可消费格式）。
+    """
+    type: Literal['tool_start','tool_result','tool_error'] = Field(description="事件类型")
+    tool_name: str = Field(description="工具名称")
+    timestamp: float = Field(description="事件时间戳")
+    status: Literal['running','completed','failed'] = Field(default="running")
+    tool_args: Optional[Dict[str, Any]] = None
+    content: Optional[str] = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
+
+    def to_event_string(self) -> str:
+        try:
+            return f"[[TOOL_EVENT]]{json.dumps(self.model_dump(exclude_none=True), ensure_ascii=False)}"
+        except Exception:
+            # 兜底: 即便 pydantic 不可用也能输出
+            payload = {
+                "type": getattr(self, "type", "unknown"),
+                "tool_name": getattr(self, "tool_name", "unknown"),
+                "timestamp": getattr(self, "timestamp", time.time()),
+                "status": getattr(self, "status", "running"),
+            }
+            # 附加字段
+            for k in ("tool_args", "content", "result", "error"):
+                v = getattr(self, k, None)
+                if v is not None:
+                    payload[k] = v
+            return f"[[TOOL_EVENT]]{json.dumps(payload, ensure_ascii=False)}"
+
+
+class IntentionResultModel(BaseModel):
+    """意图识别结果模型。"""
+    tools: List[str] = Field(default_factory=list)
+
+
+class TeamContextModel(BaseModel):
+    """
+    TeamContext 标准化模型：
+    - 允许常用关键字段；
+    - 允许附加自定义字段（extra=allow）。
+    """
+    model_config = ConfigDict(extra="allow")
+
+    team_goal: Optional[str] = None
+    objectives: Optional[List[str]] = None
+    milestones: Optional[List[str]] = None
+    findings: Optional[List[str]] = None
+    decisions: Optional[List[str]] = None
+    blockers: Optional[List[str]] = None
+    next_actions: Optional[List[str]] = None
+
+    def merge_patch(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """返回合并后的 dict（不修改当前实例）。"""
+        try:
+            validated = TeamContextModel.model_validate(patch)
+            merged = {**self.model_dump(), **validated.model_dump(exclude_unset=True, exclude_none=True)}
+            return merged
+        except Exception:
+            return {**self.model_dump(), **(patch or {})}
+
+
+class AgentConfigSchema(BaseModel):
+    """Agent 配置项的 Pydantic 校验模型（允许额外扩展字段）。"""
+    model_config = ConfigDict(extra="allow")
+
+    user_id: str
+    main_model: str
+    tool_model: str
+    flash_model: str
+    agent_name: str = "echo_agent"
+    conversation_id: Optional[str] = None
+    workspace: Optional[str] = None
+    user_system_prompt: Optional[str] = None
 
 
 class ToolExecutor(Protocol):
@@ -120,6 +209,21 @@ class AgentConfig:
         """
         if not user_id or not main_model or not tool_model or not flash_model:
             raise ValueError("user_id, main_model, tool_model, flash_model 不能为空")
+        # 使用 Pydantic 进行一次性校验（允许额外字段），增强健壮性
+        try:
+            _ = AgentConfigSchema(
+                user_id=user_id,
+                main_model=main_model,
+                tool_model=tool_model,
+                flash_model=flash_model,
+                agent_name=agent_name,
+                conversation_id=conversation_id,
+                workspace=workspace,
+                user_system_prompt=user_system_prompt,
+                **(kwargs or {})
+            )
+        except Exception as _cfg_err:
+            logging.getLogger("agent.config").warning("AgentConfig 参数校验警告: %s", _cfg_err)
             
         self.user_id = user_id
         self.main_model = main_model
@@ -185,6 +289,7 @@ class AgentStateManager:
         self.tool_execute_conversations: str = ""
         # TeamContext 共享变量组合（团队目标/阶段性结果/阻碍等）
         self.team_context: Dict[str, Any] = {}
+        self._team_ctx_model: Optional[TeamContextModel] = None
         self._team_context_override_path: Optional[Path] = None
         
         # 兼容旧逻辑，仍确保目录存在
@@ -222,7 +327,12 @@ class AgentStateManager:
             if f.exists():
                 text = f.read_text(encoding="utf-8").strip()
                 if text:
-                    self.team_context = json.loads(text)
+                    loaded = json.loads(text)
+                    try:
+                        self._team_ctx_model = TeamContextModel.model_validate(loaded)  # type: ignore[attr-defined]
+                        self.team_context = self._team_ctx_model.model_dump()
+                    except Exception:
+                        self.team_context = loaded if isinstance(loaded, dict) else {}
                     self.logger.debug("加载team_context成功，键数: %s", len(self.team_context))
         except Exception as e:
             self.logger.exception("加载team_context失败: %s", e)
@@ -231,14 +341,35 @@ class AgentStateManager:
         """将当前TeamContext保存到文件。"""
         try:
             f = self._team_context_file()
-            f.write_text(json.dumps(self.team_context, ensure_ascii=False, indent=2), encoding="utf-8")
+            payload: Dict[str, Any]
+            if self._team_ctx_model is not None:
+                try:
+                    payload = self._team_ctx_model.model_dump()
+                except Exception:
+                    payload = self.team_context
+            else:
+                payload = self.team_context
+            f.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as e:
             self.logger.exception("保存team_context失败: %s", e)
 
     def update_team_context(self, patch: Dict[str, Any]) -> None:
         """合并式更新TeamContext并保存。"""
         try:
-            self.team_context = {**(self.team_context or {}), **(patch or {})}
+            if self._team_ctx_model is None:
+                try:
+                    self._team_ctx_model = TeamContextModel.model_validate(self.team_context or {})  # type: ignore[attr-defined]
+                except Exception:
+                    self._team_ctx_model = None
+            if self._team_ctx_model is not None:
+                merged = self._team_ctx_model.merge_patch(patch or {})
+                try:
+                    self._team_ctx_model = TeamContextModel.model_validate(merged)  # type: ignore[attr-defined]
+                    self.team_context = self._team_ctx_model.model_dump()
+                except Exception:
+                    self.team_context = merged
+            else:
+                self.team_context = {**(self.team_context or {}), **(patch or {})}
             self.logger.info("更新TeamContext", extra={"event": "team_context_update", "patch_preview": str(patch)[:400]})
             self.save_team_context()
         except Exception as e:
@@ -1097,8 +1228,14 @@ class EchoAgent:
                 self.logger.warning("工具列表为空")
                 return [self.STOP_SIGNAL]
                 
-            self.logger.debug(f"解析出工具列表: {tools}")
-            return tools
+            try:
+                # 使用 Pydantic 校验
+                validated = IntentionResultModel.model_validate({"tools": tools})  # type: ignore[attr-defined]
+                tools_list = validated.tools
+            except Exception:
+                tools_list = tools
+            self.logger.debug(f"解析出工具列表: {tools_list}")
+            return tools_list
             
         except Exception as e:
             self.logger.exception("解析意图JSON时发生未知错误: %s", e)
@@ -1199,7 +1336,7 @@ class EchoAgent:
             # 生成初始响应
             initial_response = ""
             self.logger.info(
-                "开始主模型流式回答", 
+                "开始主模型流式回答\n======\n", 
                 extra={
                     "event": "llm_answer_start", 
                     "model": self.config.main_model
@@ -1214,10 +1351,11 @@ class EchoAgent:
                 
             yield "\n"
             self.state_manager.add_message("assistant", initial_response)
-            
+            # 记录智能体回答的完整内容
+            self.logger.info("\n======\n")            
             # 记录智能体回答的完整内容
             self.logger.info(
-                "主模型初次回答完成，内容: %s", 
+                "主模型初次回答完成，内容: \n%s\n======", 
                 initial_response, 
                 extra={
                     "event": "llm_answer_end", 
@@ -1470,32 +1608,42 @@ class EchoAgent:
             格式化的工具事件字符串
         """
         try:
+            # 使用 Pydantic 模型统一校验与序列化
+            if event_type == "tool_start":
+                ev = ToolEventModel(
+                    type="tool_start", tool_name=tool_name, timestamp=time.time(), status=status,
+                    tool_args=data if isinstance(data, dict) else None,
+                    content=f"开始调用 {tool_name}"
+                )
+            elif event_type == "tool_result":
+                ev = ToolEventModel(
+                    type="tool_result", tool_name=tool_name, timestamp=time.time(), status=status,
+                    result=data
+                )
+            elif event_type == "tool_error":
+                ev = ToolEventModel(
+                    type="tool_error", tool_name=tool_name, timestamp=time.time(), status=status,
+                    error=str(data)
+                )
+            else:
+                ev = ToolEventModel(type="tool_result", tool_name=tool_name, timestamp=time.time(), status=status)
+            return ev.to_event_string()
+        except Exception as e:
+            self.logger.debug("工具事件创建失败: %s", e)
+            # 兜底: 维持旧格式，避免前端解析失败
             tool_event = {
                 "type": event_type,
                 "tool_name": tool_name,
                 "timestamp": time.time(),
                 "status": status
             }
-            
             if event_type == "tool_start":
-                tool_event.update({
-                    "tool_args": data,
-                    "content": f"开始调用 {tool_name}"
-                })
+                tool_event.update({"tool_args": data if isinstance(data, dict) else None, "content": f"开始调用 {tool_name}"})
             elif event_type == "tool_result":
-                tool_event.update({
-                    "result": data
-                })
+                tool_event.update({"result": data})
             elif event_type == "tool_error":
-                tool_event.update({
-                    "error": data
-                })
-            
+                tool_event.update({"error": str(data)})
             return f"[[TOOL_EVENT]]{json.dumps(tool_event, ensure_ascii=False)}"
-            
-        except Exception as e:
-            self.logger.debug("工具事件创建失败: %s", e)
-            return f"[[TOOL_EVENT]]{{'type': 'error', 'message': 'Event creation failed'}}"
 
     async def _generate_tool_response(self) -> AsyncGenerator[str, None]:
         """
@@ -1716,6 +1864,11 @@ if __name__ == "__main__":
     
     当直接运行此模块时，启动智能体的交互式对话模式。
     包含完整的异常处理和优雅退出逻辑。
+    """
+    """
+    测试问题：
+    构建两只股票的虚拟数据，接近真实数据，画出走势图;
+    设计电商领域的数据，展示全面的数据分析，图文并茂，让我学习。
     """
     try:
         asyncio.run(agent_chat_loop())

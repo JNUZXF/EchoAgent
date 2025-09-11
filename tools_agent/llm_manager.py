@@ -580,7 +580,8 @@ class LLMFactory:
             return OpenAIProvider(model)
         elif model.startswith("glm"):
             return ZhipuProvider(model)
-        elif model.startswith(("llama", "mixtral")):
+        elif model.startswith(("groq#")):
+            model = model.split("#")[-1]
             return GroqProvider(model)
         elif model.startswith("deepseek-v3") or model.startswith("deepseek-r1"): 
             return ArkProvider(model)

@@ -183,6 +183,9 @@ class AgentStateManager:
         self.display_conversations: str = ""
         self.full_context_conversations: str = ""
         self.tool_execute_conversations: str = ""
+        # TeamContext 共享变量组合（团队目标/阶段性结果/阻碍等）
+        self.team_context: Dict[str, Any] = {}
+        self._team_context_override_path: Optional[Path] = None
         
         # 兼容旧逻辑，仍确保目录存在
         self.config.user_folder.mkdir(parents=True, exist_ok=True)
@@ -192,6 +195,73 @@ class AgentStateManager:
         
         # 初始化对话历史
         self.init_conversations()
+
+    # ========== TeamContext 读写与格式化 ==========
+    def set_team_context_override_path(self, path: Union[str, Path]) -> None:
+        """设置TeamContext外部共享文件路径（用于多Agent共享）。"""
+        try:
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            self._team_context_override_path = p
+            self.logger.debug("设置team_context外部路径: %s", str(p))
+        except Exception as e:
+            self.logger.exception("设置team_context外部路径失败: %s", e)
+
+    def _team_context_file(self) -> Path:
+        if self._team_context_override_path is not None:
+            return self._team_context_override_path
+        if not self._conv_files:
+            if self.session is not None:
+                self._conv_files = file_manager.conversation_files(self.session)
+        return self._conv_files.get("team_context", (self.config.user_folder / "team_context.json"))
+
+    def load_team_context(self) -> None:
+        """从文件加载TeamContext，若不存在则保持为空。"""
+        try:
+            f = self._team_context_file()
+            if f.exists():
+                text = f.read_text(encoding="utf-8").strip()
+                if text:
+                    self.team_context = json.loads(text)
+                    self.logger.debug("加载team_context成功，键数: %s", len(self.team_context))
+        except Exception as e:
+            self.logger.exception("加载team_context失败: %s", e)
+
+    def save_team_context(self) -> None:
+        """将当前TeamContext保存到文件。"""
+        try:
+            f = self._team_context_file()
+            f.write_text(json.dumps(self.team_context, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            self.logger.exception("保存team_context失败: %s", e)
+
+    def update_team_context(self, patch: Dict[str, Any]) -> None:
+        """合并式更新TeamContext并保存。"""
+        try:
+            self.team_context = {**(self.team_context or {}), **(patch or {})}
+            self.logger.info("更新TeamContext", extra={"event": "team_context_update", "patch_preview": str(patch)[:400]})
+            self.save_team_context()
+        except Exception as e:
+            self.logger.exception("更新team_context失败: %s", e)
+
+    def format_team_context_for_prompt(self) -> str:
+        """将TeamContext格式化为提示词片段。"""
+        try:
+            if not self.team_context:
+                return "(暂无团队上下文)"
+            # 优先展示常见关键字段
+            ordered: Dict[str, Any] = {}
+            for k in ["team_goal", "objectives", "milestones", "findings", "decisions", "blockers", "next_actions"]:
+                if k in self.team_context:
+                    ordered[k] = self.team_context[k]
+            # 追加其余字段
+            for k, v in self.team_context.items():
+                if k not in ordered:
+                    ordered[k] = v
+            return json.dumps(ordered, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.logger.debug("格式化team_context失败: %s", e)
+            return "(团队上下文格式化失败)"
 
     def init_conversations(self, system_prompt: str = "") -> None:
         """
@@ -280,6 +350,9 @@ class AgentStateManager:
                             self.conversations = loaded_conv
             except Exception as e:
                 self.logger.debug("恢复conversations失败: %s", e)
+
+            # 恢复 team_context
+            self.load_team_context()
                 
         except Exception as e:
             self.logger.exception("恢复历史会话失败: %s", e)
@@ -510,6 +583,8 @@ class AgentStateManager:
                 self._conv_files[file_key].write_text(content, encoding="utf-8")
             except Exception as e:
                 self.logger.error(f"保存{file_key}文件失败: {e}")
+        # 单独保存 team_context
+        self.save_team_context()
 
     def _save_without_session(self) -> None:
         """不使用会话保存对话历史"""
@@ -527,6 +602,8 @@ class AgentStateManager:
                 file_path.write_text(content, encoding="utf-8")
             except Exception as e:
                 self.logger.error(f"保存{filename}文件失败: {e}")
+        # 单独保存 team_context
+        self.save_team_context()
 
 
 class LocalToolManager:
@@ -888,6 +965,26 @@ class EchoAgent:
             logging.getLogger("agent.init").exception("智能体初始化失败: %s", e)
             raise
 
+    # ================= TeamContext 对外API =================
+    def set_team_context_override_path(self, path: Union[str, Path]) -> None:
+        """设置TeamContext外部共享文件路径（跨Agent共享）。"""
+        self.state_manager.set_team_context_override_path(path)
+
+    def update_team_context(self, patch: Dict[str, Any]) -> None:
+        """合并式更新TeamContext并持久化。"""
+        self.state_manager.update_team_context(patch)
+
+    def get_team_context(self) -> Dict[str, Any]:
+        """获取当前TeamContext的浅拷贝。"""
+        try:
+            return dict(self.state_manager.team_context or {})
+        except Exception:
+            return {}
+
+    def set_team_goal(self, goal: str) -> None:
+        """设置团队目标(team_goal)。"""
+        self.update_team_context({"team_goal": goal})
+
     def _register_local_tools(self) -> None:
         """
         注册所有本地工具
@@ -1019,6 +1116,9 @@ class EchoAgent:
         """
         try:
             # 准备提示词生成参数
+            # 将团队上下文注入到系统提示的可扩展区域
+            team_ctx_text = self.state_manager.format_team_context_for_prompt()
+            merged_user_system_prompt = (self.config.user_system_prompt or "") + "\n\n# 团队上下文(TeamContext)\n" + team_ctx_text
             kwargs = {
                 "userID": self.user_id,
                 "session_dir": str(self.session.session_dir),
@@ -1026,7 +1126,7 @@ class EchoAgent:
                 "agent_name": self.config.agent_name,
                 "current_date": datetime.now().strftime("%Y-%m-%d"),
                 "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt(),
-                "user_system_prompt": self.config.user_system_prompt
+                "user_system_prompt": merged_user_system_prompt
             }
             
             # 生成并设置系统提示词
@@ -1099,7 +1199,7 @@ class EchoAgent:
             # 生成初始响应
             initial_response = ""
             self.logger.info(
-                "开始主模型流式回答", 
+                "开始主模型流式回答\n======\n", 
                 extra={
                     "event": "llm_answer_start", 
                     "model": self.config.main_model
@@ -1114,10 +1214,11 @@ class EchoAgent:
                 
             yield "\n"
             self.state_manager.add_message("assistant", initial_response)
-            
+            # 记录智能体回答的完整内容
+            self.logger.info("\n======\n")            
             # 记录智能体回答的完整内容
             self.logger.info(
-                "主模型初次回答完成，内容: %s", 
+                "主模型初次回答完成，内容: \n%s\n======", 
                 initial_response, 
                 extra={
                     "event": "llm_answer_end", 
@@ -1271,6 +1372,12 @@ class EchoAgent:
                 stream_prefix=f"工具{func_name}返回结果:"
             )
 
+            # 尝试从工具结果更新TeamContext
+            try:
+                self._maybe_update_team_context_from_tool_result(tool_result)
+            except Exception as _tc_err:
+                self.logger.debug("从工具结果更新TeamContext失败: %s", _tc_err)
+
             # 发送工具结果事件
             yield self._create_tool_event("tool_result", func_name, tool_result, "completed")
             
@@ -1282,6 +1389,38 @@ class EchoAgent:
             self.logger.exception("执行工具 '%s' 时发生错误: %s", func_name, e)
             # 发送工具错误事件
             yield self._create_tool_event("tool_error", func_name, str(e), "failed")
+
+    def _maybe_update_team_context_from_tool_result(self, tool_result: Any) -> None:
+        """根据工具返回内容尝试合并更新TeamContext。
+
+        约定：
+        - 若返回为dict且包含键 'team_context' 或 'tc_update' 或 'context_update'，且对应值为dict，则进行合并更新。
+        - 若返回为可解析的JSON字符串，且其顶层或上述键对应为dict，则进行合并更新。
+        """
+        patch: Optional[Dict[str, Any]] = None
+        if isinstance(tool_result, dict):
+            for k in ("team_context", "tc_update", "context_update"):
+                if k in tool_result and isinstance(tool_result[k], dict):
+                    patch = tool_result[k]
+                    break
+            if patch is None:
+                # 若直接返回就是扁平上下文字段，也允许合并小字典
+                # 但避免将非小型结果误并入，这里做个简单限制：键数<=8
+                if 0 < len(tool_result.keys()) <= 8:
+                    patch = {k: v for k, v in tool_result.items() if isinstance(k, str)}
+        elif isinstance(tool_result, str):
+            try:
+                parsed = get_json(tool_result)
+                if isinstance(parsed, dict):
+                    for k in ("team_context", "tc_update", "context_update"):
+                        if k in parsed and isinstance(parsed[k], dict):
+                            patch = parsed[k]
+                            break
+            except Exception:
+                pass
+
+        if patch:
+            self.state_manager.update_team_context(patch)
 
     def _parse_tool_params(
         self, 

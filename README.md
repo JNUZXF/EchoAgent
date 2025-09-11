@@ -32,6 +32,7 @@ EchoAgent is an innovative agent framework that adopts a unique "**Answer First-
 - **📊 Persistent Context**: Cross-conversation variable persistence, supporting continuous data analysis tasks
 - **🔄 Context Separation**: Smart separation between agent conversation context and code execution context, preventing variable pollution while maintaining code persistence
 - **🎯 Intelligent Termination**: Smart task completion judgment through `END()` signals
+- **🖼️ Headless Plotting**: CodeRunner enforces Matplotlib Agg backend to avoid Tkinter thread errors; prefer `plt.savefig(...)` over `plt.show()` in headless runs
 
 ### 🏗️ Architecture Design
 
@@ -186,6 +187,21 @@ ResetCodeContext({"confirm": True})
 # Clears all persistent variables
 ```
 
+### ✅ Architecture Slimming & Pydantic Integration (2025-09-10)
+
+- Added `ToolEventModel`, `IntentionResultModel`, and `TeamContextModel` (Pydantic) to standardize validation/serialization
+- Unified `_create_tool_event` and kept the legacy `[[TOOL_EVENT]]` envelope unchanged for frontend compatibility
+- TeamContext read/write now validated and merged via model; gracefully falls back to dict if validation fails
+
+See details in `docs/工具集成优化.md`.
+
+### 🔄 Recent Fixes (2025-09-10)
+
+- Windows 原子写覆盖修复：`core/safe_state_manager.py` 与 `core/cache_manager.py` 将临时文件落盘后的 `rename` 改为 `replace`，避免 `WinError 183`。
+- 聊天主流程进入修复：`agent_frame_v6_optimized.py` 在 `process_query` 开始执行 `_agent_reset()` 注入系统提示后再加入用户问题，确保主模型上下文完整；修正意图占位符并增强解析鲁棒性。
+- 文档新增：详见 `docs/v6优化修复说明与使用指南.md` 获取详细说明与使用建议。
+- CodeRunner stale code fix: `agent_frame_v5.py` now updates the latest assistant message after each tool+analysis cycle and extracts code for the next `CodeRunner` run from that message. This prevents repeating old errors even after code has been corrected. See `docs/CodeRunner重复错误修复说明.md`.
+
 ### 📚 Enhanced ArXiv Paper Retrieval
 
 The framework includes a robust ArXiv paper retrieval system with the following improvements:
@@ -283,19 +299,28 @@ CodeExecutor supports three security levels:
 
 ```
 EchoAgent/
-├── agent_frame.py          # Main framework entry
-├── prompts/               # Prompt management
+├── agent_frame_v6.py      # Main agent workflow (entry for v6)
+├── agent_core/            # Core modularized components
+│   ├── __init__.py        # Re-exports common classes
+│   ├── models.py          # ToolEventModel, IntentionResultModel, TeamContextModel
+│   ├── state_manager.py   # AgentStateManager
+│   ├── tools.py           # LocalToolManager, AgentToolManager
+│   └── prompts.py         # AgentPromptManager
+├── config/                # Config management
+│   ├── __init__.py        # exports AgentSettings, create_agent_config
+│   └── agent_config.py
+├── prompts/               # Prompt templates
 │   └── agent_prompts.py
-├── tools_agent/           # Tool collection
+├── tools_agent/           # Tool implementations & registry
 │   ├── llm_manager.py     # LLM management
-│   ├── code_interpreter.py
 │   └── ...
-├── utils/                 # Tool implementation
-│   ├── code_runner.py     # Code executor
+├── utils/                 # Utilities (code runner, file manager, etc.)
+│   ├── code_runner.py
 │   └── ...
-├── tools_configs.py       # Tool configuration
-├── ToDo.md               # Optimization checklist
-└── files/                # User data storage
+├── docs/                  # Guides and architecture notes
+├── files/                 # User/session data storage
+├── workspaces/            # Multi-project/team isolation (optional)
+└── requirements.txt
 ```
 
 ### 📁 File & Session Management
@@ -311,6 +336,24 @@ EchoAgent automatically creates a session-scoped directory on each agent start, 
 See detailed guide: [docs/FileManagement.md](docs/FileManagement.md)
 
 Tip: To isolate multi-project work or enable team spaces, pass `workspace` when constructing `AgentConfig`. When set, all sessions and artifacts are stored under `workspaces/{user}/{workspace}/{agent}` instead of `files/...`. Details: [Workspace mode](docs/FileManagement.md#workspace-工作空间模式多项目多团队隔离)
+
+### 🧩 Modular Core (2025-09-10)
+
+- Introduced `agent_core/` package and moved core classes out of `agent_frame_v6.py`:
+  - `models.py`: ToolEventModel, IntentionResultModel, TeamContextModel
+  - `state_manager.py`: AgentStateManager
+  - `tools.py`: LocalToolManager, AgentToolManager
+  - `prompts.py`: AgentPromptManager
+- Backward compatibility kept: tool event envelope `[[TOOL_EVENT]]{...}` unchanged.
+- How to import now:
+```python
+from agent_core import (
+  AgentStateManager, AgentToolManager, AgentPromptManager,
+  ToolEventModel, IntentionResultModel, TeamContextModel,
+)
+```
+
+See: `docs/Agent模块化重构.md`.
 
 ### 🧾 Production-grade Logging
 
@@ -382,6 +425,9 @@ A: Adjust the `timeout` parameter in `CodeExecutor`, or check code complexity.
 
 **Q: API call failures?**
 A: Confirm API key configuration in `.env` file is correct.
+
+**Q: Tkinter errors after running plotting code via CodeRunner?**
+A: CodeRunner runs in a background thread and enforces a headless backend (Agg). Do not call `plt.show()`. Save figures using `plt.savefig(...)`. More: `docs/CodeRunner图形后端修复说明.md`.
 
 ### View Logs
 

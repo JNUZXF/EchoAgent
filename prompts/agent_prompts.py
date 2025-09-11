@@ -154,8 +154,13 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    }}
 
    # 我与你的聊天记录
+   <CONVERSATION START>
    {conversation}
+   <CONVERSATION END>
    ---
+
+   # 工具使用示例
+   {tool_use_example}
 
    现在,我问你,我的问题是否已经解决？特别强调：你需要复述一遍上述聊天记录的最后一次assistant的指示选择工具。如：
    assistant：现在我需要运行代码
@@ -172,4 +177,55 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
 TOOL_RESULT_ANA_PROMPT = """刚刚你执行了工具，请做出反应："""
 
 
+
+
+#########################
+##### v2意图识别 #########
+#########################
+
+AGENT_INTENTION_RECOGNITION_PROMPT_V2 = dedent("""
+   # 你的任务
+   你需要根据下方我提供的之前与你的聊天记录，以及你能使用的工具，判断接下来要做什么，然后输出JSON
+   
+   # 背景信息
+   ## 用户ID
+   {userID}
+
+   ## 工具箱使用指引
+   {AGENT_TOOLS_GUIDE}
+
+   ## 系统文件
+   {files}
+   ---
+
+   ## 工具箱具体入参及使用示例
+   {tools}
+   ---
+   
+   # 你的输出
+   分析：此时需要使用工具：
+   {{
+      "tools": ["工具名称(参数)"]
+   }}
+
+   # 要求
+   - 如果不需要使用工具了，就直接输出FINAL_ANS()
+   示例：
+   我的问题：什么是大模型？
+   你的输出：
+   分析：此时不需要工具，直接回答：
+   {{
+      "tools": ["FINAL_ANS()"]
+   }}
+
+
+   # 我与你的聊天记录
+   <CONVERSATION START>
+   {conversation}
+   <CONVERSATION END>
+   ---
+
+   现在，请判断接下来要做什么，然后输出JSON：
+
+""").strip().replace("  ", "")
 

@@ -21,7 +21,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
-
 def _get_project_root() -> Path:
     """基于当前文件向上查找项目根目录(包含README.md)"""
     current = Path(__file__).resolve()
@@ -30,11 +29,9 @@ def _get_project_root() -> Path:
             return parent
     return current.parent.parent
 
-
 def _sanitize_for_fs(name: str) -> str:
     """将用户ID等字符串转为文件系统安全的名称"""
     return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in name.strip())
-
 
 @dataclass
 class SessionInfo:
@@ -82,7 +79,6 @@ class SessionInfo:
     @property
     def images_dir(self) -> Path:
         return self.session_dir / "images"
-
 
 class FileManager:
     """

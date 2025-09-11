@@ -246,6 +246,17 @@ agent.update_team_context({
 
 详细说明与流程图见文档：`docs/多智能体共享上下文设计与流程图.md`。
 
+### ✅ 本次架构精简与 Pydantic 集成（2025-09-10）
+
+- 引入 `ToolEventModel`、`IntentionResultModel`、`TeamContextModel` 三个 Pydantic 模型：
+  - 事件统一序列化（保留 `[[TOOL_EVENT]]` 前缀格式，前端免改）
+  - 意图结果严格校验（无效工具名会被过滤）
+  - TeamContext 标准化与合并（支持扩展字段，兼容旧数据）
+- 精简 `_create_tool_event` 的重复分支逻辑
+- TeamContext 读写新增模型校验，降低无效数据写入风险
+
+详见：`docs/工具集成优化.md`（增补部分）
+
 3. **更新工具配置**
 在 `tools_configs.py` 中添加工具描述。
 
@@ -278,19 +289,28 @@ CodeExecutor 支持三种安全级别：
 
 ```
 EchoAgent/
-├── agent_frame.py          # 主框架入口
-├── prompts/               # 提示词管理
+├── agent_frame_v6.py      # 主工作流（v6 入口）
+├── agent_core/            # 核心模块化组件
+│   ├── __init__.py        # 对外导出常用类
+│   ├── models.py          # ToolEventModel、IntentionResultModel、TeamContextModel
+│   ├── state_manager.py   # AgentStateManager
+│   ├── tools.py           # LocalToolManager、AgentToolManager
+│   └── prompts.py         # AgentPromptManager
+├── config/                # 配置管理
+│   ├── __init__.py        # 导出 AgentSettings、create_agent_config
+│   └── agent_config.py
+├── prompts/               # 提示词模板
 │   └── agent_prompts.py
-├── tools_agent/           # 工具集合
+├── tools_agent/           # 工具实现与注册
 │   ├── llm_manager.py     # LLM 管理
-│   ├── code_interpreter.py
 │   └── ...
-├── utils/                 # 工具实现
-│   ├── code_runner.py     # 代码执行器
+├── utils/                 # 工具函数（代码执行/文件管理等）
+│   ├── code_runner.py
 │   └── ...
-├── tools_configs.py       # 工具配置
-├── ToDo.md               # 优化清单
-└── files/                # 用户数据存储
+├── docs/                  # 指南与架构说明
+├── files/                 # 用户/会话数据
+├── workspaces/            # 多项目/多团队隔离（可选）
+└── requirements.txt
 ```
 
 ## 🤝 贡献指南
@@ -343,6 +363,28 @@ cat files/{user_id}/{agent_name}/{session_id}/conversations/full_context_convers
 # 查看工具执行日志
 cat files/{user_id}/{agent_name}/{session_id}/conversations/tool_conversations.json
 ```
+
+### 🔄 最近修复（2025-09-10）
+
+- 修复 CodeRunner 旧错误反复出现：`agent_frame_v5.py` 在每次工具执行与分析结束后，会从会话中获取“最新助手回复”，下一轮 `CodeRunner` 从这条消息中提取代码，不再复用旧代码；并新增 DEBUG 日志方便排查。详见 `docs/CodeRunner重复错误修复说明.md`。
+
+### 🧩 模块化核心（2025-09-10）
+
+- 新增 `agent_core/` 包，核心类从 `agent_frame_v6.py` 抽离：
+  - `models.py`: ToolEventModel、IntentionResultModel、TeamContextModel
+  - `state_manager.py`: AgentStateManager
+  - `tools.py`: LocalToolManager、AgentToolManager
+  - `prompts.py`: AgentPromptManager
+- 向后兼容：工具事件 `[[TOOL_EVENT]]{...}` 包装未改动。
+- 导入方式：
+```python
+from agent_core import (
+  AgentStateManager, AgentToolManager, AgentPromptManager,
+  ToolEventModel, IntentionResultModel, TeamContextModel,
+)
+```
+
+详见：`docs/Agent模块化重构.md`。
 
 ### 🧾 生产级日志
 

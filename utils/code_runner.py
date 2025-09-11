@@ -75,6 +75,13 @@ class CodeExecutor:
         # 【持久化上下文】初始化持久化执行上下文
         self.persistent_context = {} if enable_persistence else None
         
+        # 【无界面绘图】强制使用无界面后端，避免 Tk 在子线程报错
+        try:
+            if 'MPLBACKEND' not in os.environ:
+                os.environ['MPLBACKEND'] = 'Agg'
+        except Exception:
+            pass
+        
         # 根据安全级别设置模块和函数限制
         if security_level == 'strict':
             # 严格模式：只允许基本的标准库
@@ -400,6 +407,23 @@ class CodeExecutor:
         def target():
             try:
                 with self._capture_output() as (stdout_capture, stderr_capture):
+                    # 【无界面绘图】在执行前设置 Matplotlib 后端为 Agg，防止 Tk 依赖
+                    try:
+                        import os as _os
+                        if 'MPLBACKEND' not in _os.environ:
+                            _os.environ['MPLBACKEND'] = 'Agg'
+                        import matplotlib as _mpl
+                        try:
+                            current_backend = getattr(_mpl, 'get_backend', lambda: '')()
+                        except Exception:
+                            current_backend = ''
+                        if 'agg' not in str(current_backend).lower():
+                            try:
+                                _mpl.use('Agg', force=True)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # 编译代码
                     compiled_code = compile(code, '<string>', 'exec')
                     
@@ -422,6 +446,13 @@ class CodeExecutor:
                             except:
                                 pass
                     except:
+                        pass
+                    
+                    # 【资源清理】关闭所有 Matplotlib 图形以释放资源
+                    try:
+                        import matplotlib.pyplot as _plt
+                        _plt.close('all')
+                    except Exception:
                         pass
                     
                     result_queue.put((result, stdout_output, stderr_output))
@@ -541,8 +572,8 @@ class CodeExecutor:
             }
             
             # 如果启用持久化，添加上下文变量信息
-            if self.enable_persistence:
-                result_dict['context_variables'] = self.get_context_variables()
+            # if self.enable_persistence:
+            #     result_dict['context_variables'] = self.get_context_variables()
             
             return result_dict
         
