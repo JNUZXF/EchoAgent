@@ -10,6 +10,8 @@ tools_configs.py
 test_llm_api.py
 docs/
 TODO-IDEAS/
+tests/
+AGENT_DEV
 
 # 测试功能，以test_开头的Python文件
 test_*.py

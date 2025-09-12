@@ -12,6 +12,9 @@
 """
 
 import os
+import shutil
+import stat
+import time
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -163,6 +166,77 @@ class FileManager:
         latest_file.write_text(json.dumps({"session_id": session_id}, ensure_ascii=False, indent=2), encoding="utf-8")
 
         return info
+
+    # ======== 会话资源释放与删除 ========
+    def release_session_logger(self, session: SessionInfo) -> None:
+        """释放当前会话绑定的日志资源，避免在 Windows 上文件句柄占用导致无法删除目录。
+
+        - 关闭并移除该会话 logger 的所有 handler
+        - 从缓存字典中移除 logger 引用
+        """
+        try:
+            key = f"{session.user_id}:{session.agent_name}:{session.session_id}"
+            logger = self._session_loggers.get(key)
+            if logger is None:
+                return
+            # 复制列表以避免迭代期间修改
+            for handler in list(logger.handlers):
+                try:
+                    handler.close()
+                except Exception:
+                    pass
+                try:
+                    logger.removeHandler(handler)
+                except Exception:
+                    pass
+            # 清理子 logger 可能残留的 handler（通过命名空间获取）
+            logging_shutdown_targets = [
+                logging.getLogger(f"agent.session.{key}.state"),
+                logging.getLogger(f"agent.session.{key}.llm"),
+                logging.getLogger(f"agent.session.{key}.tools"),
+            ]
+            for lg in logging_shutdown_targets:
+                for h in list(lg.handlers):
+                    try:
+                        h.close()
+                    except Exception:
+                        pass
+                    try:
+                        lg.removeHandler(h)
+                    except Exception:
+                        pass
+            # 移除缓存
+            self._session_loggers.pop(key, None)
+        except Exception:
+            # 释放失败不应阻断后续删除
+            pass
+
+    def _on_rm_error(self, func, path, exc_info):
+        """在 Windows 上删除只读文件/仍被占用文件的兜底处理。"""
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            pass
+
+    def remove_session_directory(self, session: SessionInfo, retries: int = 3, delay_sec: float = 0.2) -> None:
+        """删除会话目录（包含日志、对话、产物等）。
+
+        会先尝试释放日志句柄，然后进行递归删除；若 Windows 文件锁导致失败，将重试多次。
+        """
+        # 先释放句柄
+        self.release_session_logger(session)
+        session_dir = session.session_dir
+        if not session_dir.exists():
+            return
+        for i in range(max(1, retries)):
+            try:
+                shutil.rmtree(session_dir, onerror=self._on_rm_error)
+                return
+            except Exception:
+                if i == retries - 1:
+                    raise
+                time.sleep(delay_sec)
 
     def get_latest_session_id(self, user_id: str, agent_name: str) -> Optional[str]:
         safe_user = _sanitize_for_fs(user_id)

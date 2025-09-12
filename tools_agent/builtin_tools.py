@@ -7,7 +7,7 @@
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from utils.code_runner import CodeExecutor
+from utils.code_runner import CodeExecutor, execute_code
 from utils.agent_tool_continue_analyze import ContinueAnalyze
 from .toolkit import tool
 
@@ -27,7 +27,7 @@ class CodeRunnerArgs(BaseModel):
     code: Optional[str] = Field(default=None, description="空字符串，代码已经从前文提取")
     # timeout: float = Field(default=60.0, description="执行超时时间(秒)")
     use_persistent: bool = Field(default=True, description="是否启用持久化上下文")
-
+    session_id: Optional[str] = Field(default=None, description="代码执行器会话ID")
 
 @tool
 def CodeRunner(args: CodeRunnerArgs):
@@ -39,11 +39,7 @@ def CodeRunner(args: CodeRunnerArgs):
     {{"tools": ["CodeRunner(code="")"]}}
     """
     # 【持久化上下文】使用全局实例确保跨调用持久化
-    executor = get_global_code_executor()
-    # 更新超时设置（如果需要）
-    if hasattr(args, 'timeout'):
-        executor.timeout = args.timeout
-    result = executor.execute(code=args.code or "", use_persistent=args.use_persistent)
+    result = execute_code(code=args.code or "", session_id=args.session_id)
     
     # 【上下文分离】为智能体对话准备简化的结果摘要
     agent_result = {

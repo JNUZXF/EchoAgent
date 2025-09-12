@@ -105,6 +105,11 @@ OPENAI_API_KEY=your_openai_api_key
 python agent_frame.py
 ```
 
+While running, the CLI supports quick commands:
+
+- `/reset`: Delete current session directory and recreate a fresh one (new session_id)
+- `/reset keep`: Delete current session directory but keep the same session_id
+
 #### Basic Usage
 
 ```python
@@ -128,6 +133,35 @@ await agent.chat_loop()
 ### 📚 Usage Guide
 
 #### Tool System (Pydantic + @tool)
+#### 🔁 Reset Chat (Clear Conversation and Session Directory)
+
+A new method `EchoAgent.reset_chat(preserve_session_id: bool = False)` resets the agent back to a fresh state:
+
+- Deletes the current session directory including `conversations/`, `logs/`, `artifacts/`, etc.
+- Releases log handles first to avoid Windows file lock issues when removing logs.
+- Clears in-memory conversations, display/full contexts, tool contexts, and TeamContext.
+- Recreates a clean session and loggers. By default a new `session_id` is generated; pass `preserve_session_id=True` to keep the same ID.
+
+Example:
+
+```python
+agent.reset_chat()        # Delete session dir and create a new session_id
+agent.reset_chat(True)    # Delete session dir but keep the same session_id
+```
+
+From the CLI:
+
+```text
+/reset         # equals to agent.reset_chat()
+/reset keep    # equals to agent.reset_chat(True)
+```
+
+Typical use cases:
+
+- Start over with a completely clean conversation and artifacts
+- Resolve Windows log file locks preventing session folder deletion
+- Quickly reproduce issues from a clean environment
+
 
 We upgraded the tool system to use Pydantic-based schemas and a unified ToolRegistry. Define your tool as a function decorated with `@tool` and a Pydantic parameter model; the framework auto-generates JSON Schemas and executes tools with validated arguments.
 
@@ -162,6 +196,36 @@ The framework provides intelligent separation between agent conversation context
 - **CodeRunner**: Execute Python code with persistent variable context
 - **ViewCodeContext**: Inspect current persistent variables
 - **ResetCodeContext**: Clear code execution context when needed
+
+**Session-based Persistence (CodeExecutor):**
+```python
+from utils.code_runner import execute_code, quick_run, reset_session_context
+
+# Use a stable session_id to persist variables across multiple executions
+session_id = "demo-session-001"
+
+# 1) First run: define variables
+execute_code("""
+import pandas as pd
+df = pd.DataFrame({'A':[1,2,3]})
+x = 10
+""", session_id=session_id)
+
+# 2) Second run: reuse variables df and x
+res = execute_code("""
+df['B'] = df['A'] + x
+print(df)
+df.shape
+""", session_id=session_id)
+print(res['result'])  # -> (3, 2)
+
+# 3) Reset when starting fresh
+reset_session_context(session_id)
+```
+
+Notes:
+- When `session_id` is provided, a per-session `CodeExecutor` is reused with persistence enabled by default.
+- When omitted, `execute_code` behaves as before: each call uses a new isolated executor (no persistence).
 
 **Key Benefits:**
 - **Clean Conversations**: Agent conversations show execution summaries, not detailed variable dumps
@@ -465,3 +529,13 @@ Thanks to the following projects and communities for their support:
 [⬆ Back to Top](#echoagent---agent-framework)
 
 </div>
+
+## Changelog
+
+- 2025-09-12: Refactor agent_frame.py
+  - Deduplicated intention detection via `_get_tool_intention_common(v1/v2)`
+  - Unified tool loop via `_execute_tool_loop_common` while preserving v1/v2 stop semantics
+  - Extracted `_stream_main_answer` for reusable streaming answer
+  - Merged CLI loops into `_chat_loop_common` with v1/v2 wrappers
+  - Removed unused imports and fixed module header path
+  - No behavior change for existing public methods; v1/v2 both preserved

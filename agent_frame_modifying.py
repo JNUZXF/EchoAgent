@@ -1,6 +1,6 @@
 """
 智能体主框架
-文件路径: agent_frame_v4.py
+文件路径: AGENT_DEV/agent_frame_modifying.py
 功能: 根据用户的需求，自主调用工具（1轮/多轮）/直接回答问题
 
 这个模块实现了一个完整的智能体框架，包括：
@@ -11,20 +11,18 @@
 - 核心框架：EchoAgent
 
 Author: Your Name
-Version: 1.0.0
-Date: 2024-01-01
+Version: 1.1.0
+Date: 2025-09-12
 """
 
 import os
 import json
 import asyncio
-import base64
-import re
 import time
 from datetime import datetime
 from typing import (
     List, Dict, Any, AsyncGenerator, Optional, Union, 
-    Callable, Awaitable, Protocol
+    Callable, Awaitable, Literal
 )
 import logging
 from pathlib import Path
@@ -39,19 +37,13 @@ from utils.code_runner import extract_python_code
 from utils.file_manager import file_manager, SessionInfo
 
 from prompts.agent_prompts import (
-    AGENT_SYSTEM_PROMPT,
-    AGENT_JUDGE_PROMPT,
-    AGENT_INTENTION_RECOGNITION_PROMPT,
-    AGENT_TOOLS_GUIDE,
     TOOL_RESULT_ANA_PROMPT,
-    FRAMEWORK_RUNNING_CHARACTER
 )
-from tools_agent.toolkit import ToolRegistry
 from tools_agent.builtin_tools import CodeRunner as Tool_CodeRunner, continue_analyze as Tool_ContinueAnalyze
 
 # 导入配置管理模块
 from config import AgentSettings, create_agent_config
-from agent_core import ToolEventModel, IntentionResultModel, TeamContextModel
+from agent_core import ToolEventModel, IntentionResultModel
 from agent_core import AgentStateManager, AgentToolManager, AgentPromptManager
 
 # 配置环境变量
@@ -61,17 +53,8 @@ os.environ["NUMEXPR_MAX_THREADS"] = "32"
 MODULE_LOGGER = logging.getLogger("agent.bootstrap")
 MODULE_LOGGER.info("AgentCoder模块加载完成")
 
-# 类型别名
-ConversationHistory = List[Dict[str, str]]
-ToolConfig = Dict[str, Any]
-ToolResult = Any
-
-
-class ToolExecutor(Protocol):
-    """工具执行器协议定义"""
-    async def execute(self, **kwargs: Any) -> Any:
-        """执行工具的协议方法"""
-        ...
+# 类型别名（如需可在此处补充实际使用的别名）
+VersionLiteral = Literal["v1", "v2"]
 
 class EchoAgent:
     """
@@ -280,6 +263,82 @@ class EchoAgent:
         """设置团队目标(team_goal)。"""
         self.update_team_context({"team_goal": goal})
 
+    # =============== 公共内部工具方法 ===============
+    def _build_intention_kwargs(self) -> Dict[str, Any]:
+        """构造意图识别提示词所需的上下文参数。"""
+        return {
+            "files": self.state_manager.list_user_files(),
+            "user_id": self.config.user_id,
+            "display_conversations": self.state_manager.display_conversations,
+            "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt(),
+            "tool_use_example": self.tool_use_example,
+        }
+
+    async def _get_tool_intention_common(self, version: VersionLiteral) -> List[str]:
+        """通用的工具意图识别实现，根据 version 选择不同提示词。"""
+        # 重置工具对话历史
+        self.state_manager.tool_conversations = []
+
+        try:
+            kwargs = self._build_intention_kwargs()
+            if version == "v2":
+                tool_system_prompt = self.prompt_manager.get_intention_prompt_v2(**kwargs)
+            else:
+                tool_system_prompt = self.prompt_manager.get_intention_prompt(**kwargs)
+
+            # 构建对话历史并执行意图判断
+            self.state_manager.tool_conversations.append({
+                "role": "user",
+                "content": tool_system_prompt,
+            })
+            intention_history = [{"role": "user", "content": tool_system_prompt}]
+
+            ans = ""
+            self.logger.debug("开始意图判断")
+            for char in self.tool_llm.generate_stream_conversation(intention_history):
+                ans += char
+                print(char, end="", flush=True)
+            print()
+
+            self.logger.debug("INTENTION RAW: %s", ans)
+            self.state_manager.tool_conversations.append({
+                "role": "assistant",
+                "content": ans,
+            })
+
+            # 保存工具系统提示词到会话文件
+            try:
+                self.state_manager._conv_files["tool_system_prompt"].write_text(
+                    tool_system_prompt, encoding="utf-8"
+                )
+            except Exception as save_error:
+                self.logger.warning(f"保存工具系统提示词失败: {save_error}")
+
+            self.state_manager.tool_execute_conversations += f"===assistant===: \n{ans}\n"
+
+            return self._parse_intention_result(ans)
+
+        except Exception as e:
+            self.logger.exception("获取工具意图时发生错误: %s", e)
+            return [self.STOP_SIGNAL]
+
+    async def _stream_main_answer(self, start_event: str, end_event: str, end_log_prefix: str) -> AsyncGenerator[str, None]:
+        """通用的主模型流式输出与记录。"""
+        initial_response = ""
+        self.logger.info(
+            start_event,
+            extra={
+                "event": end_event.replace("_end", "_start"),
+                "model": self.config.main_model,
+            },
+        )
+        for char in self.main_llm.generate_stream_conversation(self.state_manager.conversations):
+            initial_response += char
+            yield char
+        yield "\n"
+        self.state_manager.add_message("assistant", initial_response)
+        self.logger.info("\n======\n")
+
     def _register_local_tools(self) -> None:
         """
         注册所有本地工具
@@ -302,70 +361,8 @@ class EchoAgent:
             # 不抛出异常，允许智能体在没有某些工具的情况下继续运行
     
     async def _get_tool_intention(self) -> List[str]:
-        """
-        使用LLM判断用户的意图，并返回建议的工具列表
-        
-        这个方法分析当前对话上下文，判断用户意图，并决定需要调用哪些工具。
-        
-        Returns:
-            建议使用的工具名称列表
-            
-        Raises:
-            Exception: 意图判断过程中的异常会被捕获并记录
-        """
-        # 重置工具对话历史
-        self.state_manager.tool_conversations = []
-        
-        try:
-            # 准备意图识别的上下文参数
-            kwargs = {
-                "files": self.state_manager.list_user_files(),
-                "user_id": self.config.user_id,
-                "display_conversations": self.state_manager.display_conversations,
-                "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt(),
-                "tool_use_example": self.tool_use_example
-            }
-            
-            # 生成工具意图识别提示词
-            tool_system_prompt = self.prompt_manager.get_intention_prompt(**kwargs)
-
-            # 构建对话历史并执行意图判断
-            self.state_manager.tool_conversations.append({
-                "role": "user", 
-                "content": tool_system_prompt
-            })
-            intention_history = [{"role": "user", "content": tool_system_prompt}]
-            
-            # 流式生成意图判断结果
-            ans = ""
-            self.logger.debug("开始意图判断")
-            for char in self.tool_llm.generate_stream_conversation(intention_history):
-                ans += char
-                print(char, end="", flush=True)
-            print()
-                
-            self.logger.debug("INTENTION RAW: %s", ans)
-            self.state_manager.tool_conversations.append({
-                "role": "assistant", 
-                "content": ans
-            })
-
-            # 保存工具系统提示词到会话文件
-            try:
-                self.state_manager._conv_files["tool_system_prompt"].write_text(
-                    tool_system_prompt, encoding="utf-8"
-                )
-            except Exception as save_error:
-                self.logger.warning(f"保存工具系统提示词失败: {save_error}")
-
-            self.state_manager.tool_execute_conversations += f"===assistant===: \n{ans}\n"
-
-            # 解析JSON结果并提取工具列表
-            return self._parse_intention_result(ans)
-            
-        except Exception as e:
-            self.logger.exception("获取工具意图时发生错误: %s", e)
-            return [self.STOP_SIGNAL]
+        """v1 工具意图识别（保留对外名称）。"""
+        return await self._get_tool_intention_common("v1")
 
     def _parse_intention_result(self, raw_response: str) -> List[str]:
         """
@@ -463,365 +460,198 @@ class EchoAgent:
         except Exception as e:
             self.logger.exception("智能体重置失败: %s", e)
 
-    async def process_query(self, question: str) -> AsyncGenerator[str, None]:
+    async def _process_query_common(self, question: str, version: VersionLiteral) -> AsyncGenerator[str, None]:
         """
-        处理单个用户查询的完整工作流
-        
-        这是智能体的主要处理流程，包括：
-        1. 初始化和记录用户问题
-        2. 生成初始响应
-        3. 判断工具调用意图
-        4. 执行工具调用循环
-        5. 保存状态和清理
-        
-        Args:
-            question: 用户输入的问题
-            
-        Yields:
-            流式响应内容，包括文本和工具事件
-            
-        Raises:
-            Exception: 处理过程中的严重异常会被记录并可能中断流程
+        统一的查询处理流程，按版本保留差异：
+        - v1：先流式回答，再进行意图识别与工具循环
+        - v2：直接意图识别与工具循环，若判断为 FINAL_ANS 则在循环中触发最终流式答复
         """
         start_time = datetime.now()
         self.question_count += 1
-        
+
         try:
             # 记录用户问题
             self.state_manager.add_message("user", question)
             self.logger.info(
-                "收到用户问题: %s", 
-                question, 
+                "收到用户问题: %s",
+                question,
                 extra={
-                    "event": "user_question", 
-                    "question_index": self.question_count
-                }
+                    "event": "user_question",
+                    "question_index": self.question_count,
+                    "version": version,
+                },
             )
 
             # 初始化对话状态
             await self._agent_reset()
 
-            # 生成初始响应
-            initial_response = ""
-            self.logger.info(
-                "开始主模型流式回答\n======\n", 
-                extra={
-                    "event": "llm_answer_start", 
-                    "model": self.config.main_model
-                }
-            )
-            
-            for char in self.main_llm.generate_stream_conversation(
-                self.state_manager.conversations
-            ):
-                initial_response += char
-                yield char
-                
-            yield "\n"
-            self.state_manager.add_message("assistant", initial_response)
-            # 记录智能体回答的完整内容
-            self.logger.info("\n======\n")            
-            # 记录智能体回答的完整内容
-            self.logger.info(
-                "主模型初次回答完成，内容: \n%s\n======", 
-                initial_response, 
-                extra={
-                    "event": "llm_answer_end", 
-                    "tokens": len(initial_response)
-                }
-            )
-
-            # 获取工具调用意图
-            intention_tools = await self._get_tool_intention()
-            self.logger.info(
-                "意图判断结果", 
-                extra={
-                    "event": "intention_tools", 
-                    "tools": intention_tools
-                }
-            )
-            
-            last_agent_response = initial_response
-
-            # 工具调用循环
-            async for response_chunk in self._execute_tool_loop(
-                intention_tools, 
-                last_agent_response
-            ):
-                yield response_chunk
-
-        except Exception as e:
-            self.logger.exception("处理查询时发生严重错误: %s", e)
-            yield f"\n❌ 处理查询时发生错误: {str(e)}\n"
-        
-        finally:
-            # 结束和清理
-            await self._finalize_query_processing(start_time)
-
-    async def _get_tool_intention_v2(self) -> List[str]:
-        """
-        使用LLM判断用户的意图，并返回建议的工具列表
-        
-        这个方法分析当前对话上下文，判断用户意图，并决定需要调用哪些工具。
-        
-        Returns:
-            建议使用的工具名称列表
-            
-        Raises:
-            Exception: 意图判断过程中的异常会被捕获并记录
-        """
-        # 重置工具对话历史
-        self.state_manager.tool_conversations = []
-        
-        try:
-            # 准备意图识别的上下文参数
-            kwargs = {
-                "files": self.state_manager.list_user_files(),
-                "user_id": self.config.user_id,
-                "display_conversations": self.state_manager.display_conversations,
-                "tool_configs": self.tool_manager.get_all_tool_configs_for_prompt(),
-                "tool_use_example": self.tool_use_example
-            }
-            
-            # 生成工具意图识别提示词
-            tool_system_prompt = self.prompt_manager.get_intention_prompt_v2(**kwargs)
-
-            # 构建对话历史并执行意图判断
-            self.state_manager.tool_conversations.append({
-                "role": "user", 
-                "content": tool_system_prompt
-            })
-            intention_history = [{"role": "user", "content": tool_system_prompt}]
-            
-            # 流式生成意图判断结果
-            ans = ""
-            self.logger.debug("开始意图判断")
-            for char in self.tool_llm.generate_stream_conversation(intention_history):
-                ans += char
-                print(char, end="", flush=True)
-            print()
-                
-            self.logger.debug("INTENTION RAW: %s", ans)
-            self.state_manager.tool_conversations.append({
-                "role": "assistant", 
-                "content": ans
-            })
-
-            # 保存工具系统提示词到会话文件
-            try:
-                self.state_manager._conv_files["tool_system_prompt"].write_text(
-                    tool_system_prompt, encoding="utf-8"
-                )
-            except Exception as save_error:
-                self.logger.warning(f"保存工具系统提示词失败: {save_error}")
-
-            self.state_manager.tool_execute_conversations += f"===assistant===: \n{ans}\n"
-
-            # 解析JSON结果并提取工具列表
-            return self._parse_intention_result(ans)
-            
-        except Exception as e:
-            self.logger.exception("获取工具意图时发生错误: %s", e)
-            return [self.STOP_SIGNAL]
-
-    async def process_query_v2(self, question: str) -> AsyncGenerator[str, None]:
-        start_time = datetime.now()
-        self.question_count += 1
-        
-        try:
-            # 记录用户问题
-            self.state_manager.add_message("user", question)
-            self.logger.info(
-                "收到用户问题: %s", 
-                question, 
-                extra={
-                    "event": "user_question", 
-                    "question_index": self.question_count
-                }
-            )
-
-            # 初始化对话状态
-            await self._agent_reset()
-
-            # 获取工具调用意图
-            intention_tools = await self._get_tool_intention_v2()
-            self.logger.info(
-                "意图判断结果", 
-                extra={
-                    "event": "intention_tools", 
-                    "tools": intention_tools
-                }
-            )
-            async for response_chunk in self._execute_tool_loop_v2(intention_tools):
-                yield response_chunk
-
-        except Exception as e:
-            self.logger.exception("处理查询时发生严重错误: %s", e)
-            yield f"\n❌ 处理查询时发生错误: {str(e)}\n"
-        
-        finally:
-            # 结束和清理
-            await self._finalize_query_processing(start_time)
-
-    async def _execute_tool_loop_v2(
-        self, 
-        intention_tools: List[str],
-        last_agent_response: str="",
-    ) -> AsyncGenerator[str, None]:
-        """
-        执行工具调用循环
-        
-        Args:
-            intention_tools: 意图判断得出的工具列表
-            
-        Yields:
-            工具执行过程中的响应内容
-        """
-        current_response = last_agent_response
-        tool_call_str = intention_tools[0]
-        func_name = get_func_name(convert_outer_quotes(tool_call_str))
-        print(f"func_name: {func_name}")
-        if func_name == self.STOP_SIGNAL_V2:
-            initial_response = ""
-            for char in self.main_llm.generate_stream_conversation(
-                self.state_manager.conversations
-            ):
-                initial_response += char
-                yield char
-                
-            yield "\n"
-            self.state_manager.add_message("assistant", initial_response)
-            # 记录智能体回答的完整内容
-            self.logger.info("\n======\n")            
-            # 记录智能体回答的完整内容
-            self.logger.info(
-                "主模型最终回答完成，内容: \n%s\n======", 
-                initial_response, 
-                extra={
-                    "event": "llm_answer_end", 
-                    "tokens": len(initial_response)
-                }
-            )
-        # 工具调用循环
-        while func_name != self.STOP_SIGNAL_V2:
-            try:
-                if not intention_tools:
-                    self.logger.error("意图工具列表为空，退出循环。")
-                    break
-                
-                tool_call_str = intention_tools[0]
-                func_name = get_func_name(convert_outer_quotes(tool_call_str))
-
-                if not isinstance(func_name, str):
-                    self.logger.error(
-                        "无法从'%s'中解析出有效的工具名称，跳过。", 
-                        tool_call_str
-                    )
-                    continue
-
-                # 执行单个工具调用
-                async for chunk in self._execute_single_tool(
-                    tool_call_str, 
-                    func_name, 
-                    current_response
+            # v1：先给出初始流式回答
+            if version == "v1":
+                async for chunk in self._stream_main_answer(
+                    start_event="开始主模型流式回答\n======\n",
+                    end_event="llm_answer_end",
+                    end_log_prefix="主模型初次回答完成，内容:",
                 ):
                     yield chunk
 
-                # 工具执行+分析回复流结束后，使用最新的助手消息作为下一轮代码提取的来源
-                try:
-                    for _msg in reversed(self.state_manager.conversations):
-                        if isinstance(_msg, dict) and _msg.get("role") == "assistant":
-                            current_response = str(_msg.get("content", ""))
-                            break
-                    self.logger.debug(
-                        "更新current_response用于下一轮工具：长度=%s", 
-                        len(current_response) if isinstance(current_response, str) else 0
-                    )
-                except Exception as _upd_err:
-                    self.logger.debug("更新current_response失败: %s", _upd_err)
-
-                # 获取下一个意图
+            # 根据版本进行意图识别
+            if version == "v2":
                 intention_tools = await self._get_tool_intention_v2()
-                self.logger.debug("下一个意图: %s", intention_tools[0] if intention_tools else "无")
-                tool_call_str = intention_tools[0]
-                func_name = get_func_name(convert_outer_quotes(tool_call_str))
+            else:
+                intention_tools = await self._get_tool_intention()
 
-                # 保存当前状态
-                self.state_manager.save_all_conversations()
-                await self._agent_reset()
-                
-            except Exception as loop_error:
-                self.logger.exception("工具循环中发生错误: %s", loop_error)
-                yield f"\n⚠️ 工具执行中发生错误: {str(loop_error)}\n"
-                break
+            self.logger.info(
+                "意图判断结果",
+                extra={
+                    "event": "intention_tools",
+                    "tools": intention_tools,
+                    "version": version,
+                },
+            )
+
+            # 取最新助手消息作为 last_agent_response（供 CodeRunner 提取代码）
+            last_agent_response = ""
+            for _msg in reversed(self.state_manager.conversations):
+                if isinstance(_msg, dict) and _msg.get("role") == "assistant":
+                    last_agent_response = str(_msg.get("content", ""))
+                    break
+
+            # 统一调用工具循环（内部根据版本处理停止条件与最终回答）
+            async for response_chunk in self._execute_tool_loop_common(
+                version,
+                intention_tools,
+                last_agent_response,
+            ):
+                yield response_chunk
+
+        except Exception as e:
+            self.logger.exception("处理查询时发生严重错误: %s", e)
+            yield f"\n❌ 处理查询时发生错误: {str(e)}\n"
+        finally:
+            await self._finalize_query_processing(start_time)
+
+    async def process_query(self, question: str) -> AsyncGenerator[str, None]:
+        async for chunk in self._process_query_common(question, "v1"):
+            yield chunk
+
+    async def _get_tool_intention_v2(self) -> List[str]:
+        """v2 工具意图识别（保留对外名称）。"""
+        return await self._get_tool_intention_common("v2")
+
+    async def process_query_v2(self, question: str) -> AsyncGenerator[str, None]:
+        async for chunk in self._process_query_common(question, "v2"):
+            yield chunk
+
+    async def _execute_tool_loop_v2(
+        self, 
+        intention_tools: List[str], 
+        last_agent_response: str="",
+    ) -> AsyncGenerator[str, None]:
+        """v2 工具循环封装，委托公共实现。"""
+        async for chunk in self._execute_tool_loop_common("v2", intention_tools, last_agent_response):
+            yield chunk
 
     async def _execute_tool_loop(
         self, 
         intention_tools: List[str], 
         last_agent_response: str
     ) -> AsyncGenerator[str, None]:
-        """
-        执行工具调用循环
-        
-        Args:
-            intention_tools: 意图判断得出的工具列表
-            last_agent_response: 上一次智能体的响应
-            
-        Yields:
-            工具执行过程中的响应内容
-        """
+        """v1 工具循环封装，委托公共实现。"""
+        async for chunk in self._execute_tool_loop_common("v1", intention_tools, last_agent_response):
+            yield chunk
+
+    def _stop_signal(self, version: VersionLiteral, func_name: str) -> bool:
+        if version == "v2" and func_name == self.STOP_SIGNAL_V2:
+            return True
+        elif version == "v1" and func_name == self.STOP_SIGNAL:
+            return True
+        return False
+
+    async def _execute_tool_loop_common(
+        self,
+        version: VersionLiteral,
+        intention_tools: List[str],
+        last_agent_response: str,
+    ) -> AsyncGenerator[str, None]:
+        """【分层架构】【模块化设计】【单一职责原则】统一工具循环实现，按版本保留差异。"""
         current_response = last_agent_response
-        
-        # 工具调用循环
-        while self.STOP_SIGNAL not in intention_tools:
+
+        if not intention_tools:
+            self.logger.error("意图工具列表为空，退出循环。")
+            return
+
+        tool_call_str = intention_tools[0]
+        func_name = get_func_name(convert_outer_quotes(tool_call_str))
+
+        # v2: 如果第一步就是最终回答，直接输出并结束
+        if self._stop_signal(version, func_name):
+            async for chunk in self._stream_main_answer(
+                start_event="开始主模型流式回答\n======\n",
+                end_event="llm_answer_end",
+                end_log_prefix="主模型最终回答完成，内容:",
+            ):
+                yield chunk
+            return
+
+        # 循环条件
+        def should_continue() -> bool:
+            if version == "v1":
+                return self.STOP_SIGNAL not in intention_tools
+            return not self._stop_signal(version, func_name)
+
+        while should_continue():
             try:
                 if not intention_tools:
                     self.logger.error("意图工具列表为空，退出循环。")
                     break
-                
+
                 tool_call_str = intention_tools[0]
                 func_name = get_func_name(convert_outer_quotes(tool_call_str))
 
-                if func_name == self.STOP_SIGNAL:
+                if self._stop_signal(version, func_name):
                     break
 
-                # 添加类型检查以修复linter错误
                 if not isinstance(func_name, str):
-                    self.logger.error(
-                        "无法从'%s'中解析出有效的工具名称，跳过。", 
-                        tool_call_str
-                    )
+                    self.logger.error("无法从'%s'中解析出有效的工具名称，跳过。", tool_call_str)
                     continue
 
                 # 执行单个工具调用
                 async for chunk in self._execute_single_tool(
-                    tool_call_str, 
-                    func_name, 
-                    current_response
+                    tool_call_str,
+                    func_name,
+                    current_response,
                 ):
                     yield chunk
 
-                # 工具执行+分析回复流结束后，使用最新的助手消息作为下一轮代码提取的来源
+                # 使用最新助手消息更新 current_response
                 try:
                     for _msg in reversed(self.state_manager.conversations):
                         if isinstance(_msg, dict) and _msg.get("role") == "assistant":
                             current_response = str(_msg.get("content", ""))
                             break
                     self.logger.debug(
-                        "更新current_response用于下一轮工具：长度=%s", 
-                        len(current_response) if isinstance(current_response, str) else 0
+                        "更新current_response用于下一轮工具：长度=%s",
+                        len(current_response) if isinstance(current_response, str) else 0,
                     )
                 except Exception as _upd_err:
                     self.logger.debug("更新current_response失败: %s", _upd_err)
 
                 # 获取下一个意图
-                intention_tools = await self._get_tool_intention()
+                if version == "v2":
+                    intention_tools = await self._get_tool_intention_v2()
+                else:
+                    intention_tools = await self._get_tool_intention()
                 self.logger.debug("下一个意图: %s", intention_tools[0] if intention_tools else "无")
-                
-                # 保存当前状态
+
+                # 保存当前状态并刷新提示
                 self.state_manager.save_all_conversations()
                 await self._agent_reset()
-                
+
+                # 更新 func_name 用于 v2 循环判断
+                if intention_tools:
+                    next_call_str = intention_tools[0]
+                    func_name = get_func_name(convert_outer_quotes(next_call_str))
+
             except Exception as loop_error:
                 self.logger.exception("工具循环中发生错误: %s", loop_error)
                 yield f"\n⚠️ 工具执行中发生错误: {str(loop_error)}\n"
@@ -962,6 +792,7 @@ class EchoAgent:
         if func_name == "CodeRunner":
             code_text = extract_python_code(last_response)
             params["code"] = code_text
+            params["session_id"] = self.config.code_runner_session_id
             try:
                 self.logger.debug(
                     "为CodeRunner提取代码：长度=%s", 
@@ -1044,32 +875,12 @@ class EchoAgent:
             await self._agent_reset()
             
             # 生成响应
-            next_response = ""
-            self.logger.info(
-                "主模型对工具结果进行分析", 
-                extra={
-                    "event": "llm_after_tool_start", 
-                    "model": self.config.main_model
-                }
-            )
-            
-            for char in self.main_llm.generate_stream_conversation(
-                self.state_manager.conversations
+            async for char in self._stream_main_answer(
+                start_event="主模型对工具结果进行分析",
+                end_event="llm_after_tool_end",
+                end_log_prefix="主模型分析完成，内容:",
             ):
-                next_response += char
                 yield char
-                
-            self.state_manager.add_message("assistant", next_response)
-            
-            # 记录分析后的完整回答
-            self.logger.info(
-                "主模型分析完成，内容: %s", 
-                next_response, 
-                extra={
-                    "event": "llm_after_tool_end", 
-                    "tokens": len(next_response)
-                }
-            )
             
         except Exception as e:
             self.logger.exception("生成工具响应时发生错误: %s", e)
@@ -1115,60 +926,7 @@ class EchoAgent:
             EOFError: 输入流结束
             Exception: 其他处理异常
         """
-        cli_logger = logging.getLogger("agent.cli")
-        cli_logger.info("下一代智能体已启动！")
-        
-        # 打印欢迎信息
-        self._print_welcome_message()
-        
-        while True:
-            try:
-                cli_logger.info("等待用户输入问题")
-                print("\n" + "-"*40)
-                query = input("🧑 您: ").strip()
-        
-                # 检查退出命令
-                if self._should_exit(query):
-                    cli_logger.info("用户选择退出")
-                    print("👋 感谢使用，再见！")
-                    break
-                # 检查重置命令
-                if query.startswith("/reset"):
-                    preserve = False
-                    parts = query.split()
-                    if len(parts) > 1 and parts[1].lower() in ("keep", "preserve", "same"):
-                        preserve = True
-                    cli_logger.info("收到 /reset 命令", extra={"event": "cli_reset", "preserve_session_id": preserve})
-                    print("🧹 正在重置会话，请稍候…")
-                    try:
-                        self.reset_chat(preserve_session_id=preserve)
-                        print(f"✅ 重置完成。当前会话ID: {self.session.session_id}")
-                    except Exception as _e:
-                        cli_logger.exception("重置会话失败: %s", _e)
-                        print(f"❌ 重置失败: {_e}")
-                    continue
-                
-                # 检查空输入
-                if not query:
-                    cli_logger.warning("空输入")
-                    print("⚠️ 请输入一些内容")
-                    continue
-                    
-                # 处理用户查询
-                await self._handle_user_query(query)
-                    
-            except KeyboardInterrupt:
-                cli_logger.info("检测到 Ctrl+C，正在退出…")
-                print("\n\n👋 检测到 Ctrl+C，正在退出...")
-                break
-            except EOFError:
-                cli_logger.info("检测到输入结束，正在退出…")
-                print("\n\n👋 检测到输入结束，正在退出...")
-                break
-            except Exception as e:
-                cli_logger.exception("处理查询时发生错误: %s", e)
-                print(f"\n❌ 处理查询时发生错误: {str(e)}")
-                print("请重试或输入 'quit' 退出")
+        await self._chat_loop_common(mode="v1")
 
     async def chat_loop_v2(self) -> None:
         """
@@ -1182,24 +940,26 @@ class EchoAgent:
             EOFError: 输入流结束
             Exception: 其他处理异常
         """
+        await self._chat_loop_common(mode="v2")
+
+    async def _chat_loop_common(self, mode: VersionLiteral) -> None:
+        """统一的 CLI 循环，按 mode 调用对应处理器。"""
         cli_logger = logging.getLogger("agent.cli")
         cli_logger.info("下一代智能体已启动！")
-        
-        # 打印欢迎信息
+
         self._print_welcome_message()
-        
+
         while True:
             try:
                 cli_logger.info("等待用户输入问题")
-                print("\n" + "-"*40)
+                print("\n" + "-" * 40)
                 query = input("🧑 您: ").strip()
-        
-                # 检查退出命令
+
                 if self._should_exit(query):
                     cli_logger.info("用户选择退出")
                     print("👋 感谢使用，再见！")
                     break
-                # 检查重置命令
+
                 if query.startswith("/reset"):
                     preserve = False
                     parts = query.split()
@@ -1214,16 +974,17 @@ class EchoAgent:
                         cli_logger.exception("重置会话失败: %s", _e)
                         print(f"❌ 重置失败: {_e}")
                     continue
-                
-                # 检查空输入
+
                 if not query:
                     cli_logger.warning("空输入")
                     print("⚠️ 请输入一些内容")
                     continue
-                    
-                # 处理用户查询
-                await self._handle_user_query_v2(query)
-                    
+
+                if mode == "v2":
+                    await self._handle_user_query_v2(query)
+                else:
+                    await self._handle_user_query(query)
+
             except KeyboardInterrupt:
                 cli_logger.info("检测到 Ctrl+C，正在退出…")
                 print("\n\n👋 检测到 Ctrl+C，正在退出...")
@@ -1302,7 +1063,7 @@ class SearchArxivArgs(BaseModel):
 
 @tool
 def search_arxiv(args: SearchArxivArgs):
-    """基于关键词和论文篇数检索arxiv论文摘要"""
+    """基于关键词和论文篇数检索arxiv论文摘要，**示例用法**：{{"tools": ["search_arxiv(keyword='LLM Agent', max_results=5)"]}}"""
     # 【单一职责原则】【日志系统原则】【可扩展性原则】
     import requests
     import logging
@@ -1365,29 +1126,11 @@ def search_arxiv(args: SearchArxivArgs):
     except Exception as e:
         logger.exception(f"arXiv检索异常: {e}")
         return {"answer": f"arXiv检索失败: {e}"}
-
-
-
-'''
-Powerful Agent Tool Building
-
-# 并行处理工具
-示例1：多文件总结 async+进度条展示
-
-
-# LLM筛选总结工具
-## 多文件内容筛选
-
-## 联网多网页筛选
-
-# Agentic Coding工具（支持数据分析处理场景）
-
-'''
-
-
-
+        
 # 命令行聊天模式函数
-async def agent_chat_loop() -> None:
+async def agent_chat_loop(
+    version: VersionLiteral = "v1"
+) -> None:
     """
     主函数，启动交互式智能体对话
     
@@ -1408,14 +1151,14 @@ async def agent_chat_loop() -> None:
     # conversation_id = "test" 
     main_model = "qwen/qwen3-next-80b-a3b-instruct"
     tool_model = "qwen/qwen3-next-80b-a3b-instruct"
-    tool_model = "google/gemini-2.5-flash"
     flash_model = "doubao-pro"
     tool_use_example = f"""
     当需要执行代码时，必须参考如下示例：
     {{"tools": ["CodeRunner()"]}}
     """
     user_system_prompt = "简单问题直接回答，复杂问题请拆解多个步骤，逐步完成。"
-
+    # code_runner session_id
+    code_runner_session_id = "code_runner_session_id"
     try:
         # 1. 【配置外置】初始化配置和协调器，使用新的配置管理系统
         config = create_agent_config(
@@ -1428,13 +1171,17 @@ async def agent_chat_loop() -> None:
             agent_name=agent_name,
             use_new_config=True,
             user_system_prompt=user_system_prompt,
-            tool_use_example=tool_use_example
+            tool_use_example=tool_use_example,
+            code_runner_session_id=code_runner_session_id
         )
         agent = EchoAgent(config)
         agent.tool_manager.register_tool_function(search_arxiv)
         # 2. 启动交互式对话循环
-        await agent.chat_loop()
-        # await agent.chat_loop_v2()
+        # await agent.chat_loop()
+        if version == "v2":
+            await agent.chat_loop_v2()
+        else:
+            await agent.chat_loop()
 
     except KeyboardInterrupt:
         logging.getLogger("agent.cli").info("用户手动退出智能体对话")
@@ -1466,7 +1213,7 @@ if __name__ == "__main__":
     """
     测试问题：
     构建两只股票的虚拟数据，接近真实数据，画出走势图;
-    设计电商领域的数据，展示全面的数据分析，图文并茂，让我学习。
+    设计电商领域的数据，展示全面的数据分析，图文并茂，让我学习。必须使用高级封装代码，比如class等高级抽象
     搜索10篇最新的LLM Agent相关的论文并总结创新之处
     """
     try:

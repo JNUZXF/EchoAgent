@@ -103,6 +103,11 @@ OPENAI_API_KEY=your_openai_api_key
 python agent_frame.py
 ```
 
+运行期间支持 CLI 快捷命令：
+
+- `/reset`：删除当前会话目录并重建会话（生成新的 session_id）
+- `/reset keep`：删除当前会话目录但保留 session_id
+
 #### 基础使用
 
 ```python
@@ -126,14 +131,67 @@ await agent.chat_loop()
 ### 📚 使用文档
 
 #### 工具系统
+#### 🔁 重置聊天（清空对话与会话目录）
+
+新增 `EchoAgent.reset_chat(preserve_session_id: bool = False)` 用于一键回到“刚刚初始化”的干净状态：
+
+- 会删除当前会话目录下的所有文件与子目录（包含 `conversations/`, `logs/`, `artifacts/` 等）；
+- 会释放日志句柄，解决 Windows 上日志文件占用导致无法删除的问题；
+- 会清空内存中的对话历史、显示上下文、工具上下文与 TeamContext；
+- 会重新创建会话与日志；默认生成新的 `session_id`（传入 `preserve_session_id=True` 可保留原会话ID）。
+
+示例：
+
+```python
+agent.reset_chat()                 # 删除会话目录并生成新 session_id
+agent.reset_chat(True)             # 删除会话目录但保留原 session_id
+```
+
+在 CLI 中：
+
+```text
+/reset            # 等同于 agent.reset_chat()
+/reset keep       # 等同于 agent.reset_chat(True)
+```
+
+典型场景：
+
+- 需要彻底清空之前的聊天与产物，开始全新对话
+- 遇到日志被占用（Windows）导致会话目录无法删除
+- 需要快速回滚到干净环境做复现
+
 
 EchoAgent 内置多种工具：
 
-**CodeRunner - 代码执行器**
+**CodeRunner - 代码执行器（基于会话的持久化）**
 ```python
-# 用户: 帮我计算斐波那契数列的前10项
-# AI会直接回答，然后自动调用CodeRunner执行代码
+from utils.code_runner import execute_code, quick_run, reset_session_context
+
+# 固定一个 session_id，用于多次执行间的变量持久化
+session_id = "demo-session-001"
+
+# 第一次执行：定义变量
+execute_code("""
+import pandas as pd
+df = pd.DataFrame({'A':[1,2,3]})
+x = 10
+""", session_id=session_id)
+
+# 第二次执行：复用 df 与 x
+res = execute_code("""
+df['B'] = df['A'] + x
+print(df)
+df.shape
+""", session_id=session_id)
+print(res['result'])  # -> (3, 2)
+
+# 需要全新开始时重置会话上下文
+reset_session_context(session_id)
 ```
+
+说明：
+- 传入 `session_id` 时，将复用对应会话的 `CodeExecutor`，默认开启持久化；
+- 不传 `session_id` 时，保持原有隔离语义：每次调用创建新执行器，不共享变量。
 
 **文档处理工具**
 - PDF 阅读和转换

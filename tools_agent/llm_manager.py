@@ -1,15 +1,27 @@
 """
 支持的模型：
-anthropic/claude-3.7-sonnet
-anthropic/claude-3.7-sonnet:thinking
-anthropic/claude-3.5-haiku-20241022
-anthropic/claude-3.5-sonnet
+# Claude
+anthropic/claude-sonnet-4
+
+# OpenAI
 openai/gpt-4o-2024-11-20
 openai/gpt-4o-mini
 
-google/gemini-2.0-flash-001
-google/gemini-2.5-pro-preview-03-25
+# Gemini
+google/gemini-2.5-flash
+google/gemini-2.5-pro
 
+# 通义千问
+qwen/qwen3-next-80b-a3b-instruct
+qwen/qwen3-max
+
+# 美团
+meituan/longcat-flash-chat
+
+# 豆包
+doubao-seed-1-6-250615
+
+openrouter/sonoma-sky-alpha
 
 """
 

@@ -21,6 +21,8 @@ from typing import Dict, Any, Optional, Tuple, List
 import threading
 import queue
 import re
+import logging
+from logging.handlers import RotatingFileHandler
 
 class CodeExecutionError(Exception):
     """代码执行相关异常"""
@@ -35,6 +37,120 @@ class SecurityError(CodeExecutionError):
 class TimeoutError(CodeExecutionError):
     """超时异常"""
     pass
+
+
+# =============================
+# 模块级：执行器注册与日志配置
+# =============================
+_EXECUTOR_REGISTRY_LOCK = threading.Lock()
+_EXECUTOR_REGISTRY: Dict[str, "CodeExecutor"] = {}
+
+
+def _get_project_root_for_logging() -> Path:
+    """定位项目根目录（用于日志与默认存储）。"""
+    try:
+        from utils.file_manager import FileManager  # 复用现有项目根解析
+        return FileManager().project_root
+    except Exception:
+        current = Path(__file__).resolve()
+        for parent in current.parents:
+            if (parent / 'README.md').exists():
+                return parent
+        return current.parent.parent
+
+
+def _setup_module_logger() -> logging.Logger:
+    """配置模块级日志，输出到控制台与 files/system_logs/code_runner.log。"""
+    logger = logging.getLogger("CodeRunner")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter(
+        fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # 控制台
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # 文件
+    try:
+        project_root = _get_project_root_for_logging()
+        log_dir = (project_root / 'files' / 'system_logs')
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            filename=str(log_dir / 'code_runner.log'),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception:
+        # 文件日志不可用时忽略，不影响功能
+        pass
+
+    return logger
+
+
+_LOGGER = _setup_module_logger()
+
+
+def get_executor(session_id: Optional[str] = None, **kwargs) -> "CodeExecutor":
+    """
+    获取或创建会话级 CodeExecutor（启用持久化）。
+
+    注意：为不破坏既有行为，仅当显式提供 session_id 时复用同一执行器。
+    未提供 session_id 时，请直接实例化 CodeExecutor 以保持原隔离语义。
+    """
+    key = str(session_id) if session_id else "default"
+    with _EXECUTOR_REGISTRY_LOCK:
+        if key in _EXECUTOR_REGISTRY:
+            return _EXECUTOR_REGISTRY[key]
+        # 默认启用持久化，调用方可在 kwargs 覆盖
+        if 'enable_persistence' not in kwargs:
+            kwargs['enable_persistence'] = True
+        executor = CodeExecutor(**kwargs)
+        _EXECUTOR_REGISTRY[key] = executor
+        _LOGGER.info(f"Create CodeExecutor for session_id={key}, persistence={executor.enable_persistence}")
+        return executor
+
+
+def reset_session_context(session_id: Optional[str] = None) -> None:
+    """重置指定会话的持久化上下文（如不存在则忽略）。"""
+    key = str(session_id) if session_id else "default"
+    with _EXECUTOR_REGISTRY_LOCK:
+        executor = _EXECUTOR_REGISTRY.get(key)
+    if executor and getattr(executor, 'enable_persistence', False):
+        executor.reset_context()
+        _LOGGER.info(f"Reset persistent context for session_id={key}")
+
+
+def drop_session(session_id: Optional[str] = None) -> bool:
+    """移除并丢弃会话对应的执行器。"""
+    key = str(session_id) if session_id else "default"
+    with _EXECUTOR_REGISTRY_LOCK:
+        existed = key in _EXECUTOR_REGISTRY
+        if existed:
+            _EXECUTOR_REGISTRY.pop(key, None)
+    if existed:
+        _LOGGER.info(f"Drop executor session_id={key}")
+    return existed
+
+
+def get_session_variables(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """获取指定会话的用户变量快照。"""
+    key = str(session_id) if session_id else "default"
+    with _EXECUTOR_REGISTRY_LOCK:
+        executor = _EXECUTOR_REGISTRY.get(key)
+    if not executor:
+        return {}
+    return executor.get_context_variables()
 
 
 class CodeExecutor:
@@ -481,7 +597,7 @@ class CodeExecutor:
         else:
             raise CodeExecutionError("代码执行失败，无法获取结果")
     
-    def execute(self, code: str, context: Optional[Dict[str, Any]] = None, use_persistent: bool = True) -> Dict[str, Any]:
+    def execute(self, code: str, context: Optional[Dict[str, Any]] = None, use_persistent: bool = True, session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         执行Python代码
         
@@ -489,7 +605,7 @@ class CodeExecutor:
             code: 要执行的Python代码字符串
             context: 执行上下文（全局变量），如果为None且启用持久化，则使用持久化上下文
             use_persistent: 是否使用持久化上下文（仅在context为None时生效）
-            
+            session_id: 代码执行器会话ID
         Returns:
             包含执行结果的字典，包括:
             - success: 是否成功执行
@@ -543,7 +659,9 @@ class CodeExecutor:
             elif self.enable_persistence and use_persistent and self.persistent_context:
                 # 使用持久化上下文
                 global_vars.update(self.persistent_context)
-            
+            elif session_id is not None:
+                # 使用会话ID
+                global_vars.update(get_session_variables(session_id))
             # 执行代码
             result, stdout_output, stderr_output = self._execute_with_timeout(code, global_vars)
             
@@ -712,28 +830,44 @@ def execute_code(code: str, **kwargs) -> Dict[str, Any]:
     
     Args:
         code: 要执行的代码
-        **kwargs: 传递给CodeExecutor的参数
+        **kwargs: 支持参数：
+            - session_id: 可选，会话ID。提供后将复用同一执行器并持久化变量
+            - 以及传递给 CodeExecutor 的初始化参数
         
     Returns:
         执行结果字典
     """
+    session_id = kwargs.pop('session_id', None)
+    use_persistent = kwargs.pop('use_persistent', True)
+    if session_id is not None:
+        executor = get_executor(session_id=session_id, **kwargs)
+        _LOGGER.info(f"Execute code with session_id={session_id}, length={len(code)}")
+        return executor.execute(code, use_persistent=use_persistent)
+    # 兼容旧行为：未提供 session_id 时，每次新建执行器（不复用上下文）
     executor = CodeExecutor(**kwargs)
-    return executor.execute(code)
+    _LOGGER.info(f"Execute code without session (isolated), length={len(code)}")
+    return executor.execute(code, use_persistent=use_persistent)
 
 
-def quick_run(code: str, print_result: bool = True) -> Any:
+def quick_run(code: str, print_result: bool = True, session_id: Optional[str] = None, **kwargs) -> Any:
     """
     快速运行代码并打印结果
     
     Args:
         code: 要执行的代码
         print_result: 是否打印结果
+        session_id: 可选，会话ID。提供后持久化上下文
+        **kwargs: 其他将传递给执行器的初始化参数
         
     Returns:
         执行结果中的result字段
     """
-    executor = CodeExecutor()
-    result = executor.execute(code)
+    if session_id is not None:
+        executor = get_executor(session_id=session_id, **kwargs)
+        result = executor.execute(code)
+    else:
+        executor = CodeExecutor(**kwargs)
+        result = executor.execute(code)
     
     if print_result:
         print(executor.format_result(result))

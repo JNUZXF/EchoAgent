@@ -54,7 +54,7 @@ class AgentSettings(BaseSettings):
     workspace: Optional[str] = Field(None, env='AGENT_WORKSPACE', description="工作空间名称")
     user_system_prompt: Optional[str] = Field(None, env='USER_SYSTEM_PROMPT', description="用户自定义系统提示词")
     tool_use_example: Optional[str] = Field(None, env='TOOL_USE_EXAMPLE', description="工具使用示例提示词")
-    
+    code_runner_session_id: Optional[str] = Field(None, env='CODE_RUNNER_SESSION_ID', description="代码执行器会话ID")
     # ========== 模型配置 ==========
     main_model: str = Field('doubao-seed-1-6-250615', env='MAIN_MODEL', description="主要对话模型")
     tool_model: str = Field('doubao-pro', env='TOOL_MODEL', description="工具判断模型")
@@ -295,9 +295,35 @@ def create_agent_config(
     workspace: Optional[str] = None,
     user_system_prompt: Optional[str] = None,
     use_new_config: bool = True,
+    code_runner_session_id: Optional[str] = None,
     **kwargs: Any
 ) -> Union[AgentSettings, LegacyAgentConfig]:
     """
+    建议使用的模型：
+    #### Claude
+    anthropic/claude-sonnet-4\n  
+
+    #### OpenAI
+    openai/gpt-4o-2024-11-20\n    
+    openai/gpt-4o-mini\n   
+
+    #### Gemini
+    google/gemini-2.5-flash\n   
+    google/gemini-2.5-pro\n   
+
+    #### 通义千问
+    qwen/qwen3-next-80b-a3b-instruct\n   
+    qwen/qwen3-max\n   
+
+    #### 美团
+    meituan/longcat-flash-chat\n   
+
+    #### 豆包
+    doubao-seed-1-6-250615\n 
+
+    openrouter/sonoma-sky-alpha\n 
+
+    ---
     【工厂模式】创建Agent配置的统一工厂函数
     
     Args:
@@ -310,6 +336,7 @@ def create_agent_config(
         workspace: 工作空间
         user_system_prompt: 用户系统提示词
         use_new_config: 是否使用新版配置（默认True）
+        code_runner_session_id: 代码执行器会话ID
         **kwargs: 其他配置参数
         
     Returns:
@@ -324,6 +351,7 @@ def create_agent_config(
         "conversation_id": conversation_id,
         "workspace": workspace,
         "user_system_prompt": user_system_prompt,
+        "code_runner_session_id": code_runner_session_id,
         **kwargs
     }
     

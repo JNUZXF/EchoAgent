@@ -16,6 +16,7 @@ AGENT_TOOLS_GUIDE = dedent(
       ├─ images/                # 保存图片
       └─ temp/                  # 临时文件
    - 编写代码时，如果需要绘图，请编写保存图片的代码，不要展示图片。
+   - 在你每次进行需要代码的数据分析时，都需要同时写出对应的代码，这样系统才能调用
    """
 ).strip().replace("  ", "")
 
@@ -54,6 +55,11 @@ AGENT_SYSTEM_PROMPT = dedent("""
    # 你的任务
    你需要根据我与你的聊天记录，以及下方提供的规则，回答我的问题。
 
+   # 你需要遵守的规则
+   <IMPORTANT RULES>
+   {user_system_prompt}
+   </IMPORTANT RULES>
+
    # 你的工作特点
    {FRAMEWORK_RUNNING_CHARACTER}
    ---
@@ -61,8 +67,6 @@ AGENT_SYSTEM_PROMPT = dedent("""
    # 你的工具
    {AGENT_TOOLS_GUIDE}
 
-   # 你需要遵守的规则
-   {user_system_prompt}
    ---
 
 """).strip().replace("  ", "")
@@ -152,6 +156,15 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
    {{
       "tools": ["END()"]
    }}
+   - 当任务后续还需要进行总结/撰写详细的文字分析的时候，任务还没有完成，你不需要调用工具，只需要是使用continue_analyze()
+   示例：
+   assistant: 接下来让我进一步分析...
+
+   你：根据上文,现在不需要工具，需要文字分析，因此使用continue_analyze
+   {{
+      "tools": ["continue_analyze()"]
+   }}
+
 
    # 我与你的聊天记录
    <CONVERSATION START>
@@ -169,8 +182,10 @@ AGENT_INTENTION_RECOGNITION_PROMPT = dedent("""
       "tools": ["CodeRunner()"]
    }}
    ---
+
+   CodeRunner工具**必须**是无参数的
+
    如果解决了,则输出END()；如果还没解决,则输出json工具；
-   
    现在，请根据assistant的指引，告诉我接下来要做什么：
 """).strip().replace("  ", "")
 
