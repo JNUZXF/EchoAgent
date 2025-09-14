@@ -61,8 +61,8 @@ A next-generation intelligent agent framework that combines modular architecture
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/my_agent_frame.git
-cd my_agent_frame
+git clone https://github.com/JNUZXF/EchoAgent.git
+cd EchoAgent
 
 # Install required packages
 pip install -r requirements.txt
@@ -529,8 +529,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/my_agent_frame.git
-cd my_agent_frame
+git clone https://github.com/JNUZXF/EchoAgent.git
+cd EchoAgent
 
 # Create virtual environment
 python -m venv venv
@@ -568,9 +568,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Developer
 
-**Your Name**  
-📧 Email: your.email@example.com  
-🐙 GitHub: [@yourusername](https://github.com/yourusername)  
+**Xinfu Zhang**  
+📧 Email: JNUZXF@163.com  
+🐙 GitHub: [@JNUZXF](https://github.com/JNUZXF)  
 
 ### WeChat
 
@@ -580,9 +580,9 @@ For Chinese users, scan the QR code to add on WeChat:
 
 ### Support
 
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/my_agent_frame/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/my_agent_frame/discussions)
-- 📖 **Documentation**: [Wiki](https://github.com/yourusername/my_agent_frame/wiki)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/JNUZXF/EchoAgent/discussions)
+- 📖 **Documentation**: [Wiki](https://github.com/JNUZXF/EchoAgent/wiki)
 
 ---
 

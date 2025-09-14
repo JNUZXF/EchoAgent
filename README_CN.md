@@ -61,8 +61,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/my_agent_frame.git
-cd my_agent_frame
+git clone https://github.com/JNUZXF/EchoAgent.git
+cd EchoAgent
 
 # 安装所需包
 pip install -r requirements.txt
@@ -529,8 +529,8 @@ my_agent_frame/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/my_agent_frame.git
-cd my_agent_frame
+git clone https://github.com/JNUZXF/EchoAgent.git
+cd EchoAgent
 
 # 创建虚拟环境
 python -m venv venv
@@ -568,9 +568,9 @@ mypy agent_core/ tools_agent/
 
 ### 开发者
 
-**您的姓名**  
-📧 邮箱：your.email@example.com  
-🐙 GitHub：[@yourusername](https://github.com/yourusername)  
+**张新福**  
+📧 邮箱：JNUZXF@163.com  
+🐙 GitHub：[@JNUZXF](https://github.com/JNUZXF)  
 
 ### 微信联系
 
@@ -578,11 +578,13 @@ mypy agent_core/ tools_agent/
 
 ![微信二维码](images/wechatID.jpg)
 
+手机号：+86 13005427511
+
 ### 支持
 
-- 🐛 **错误报告**：[GitHub Issues](https://github.com/yourusername/my_agent_frame/issues)
-- 💡 **功能请求**：[GitHub Discussions](https://github.com/yourusername/my_agent_frame/discussions)
-- 📖 **文档**：[Wiki](https://github.com/yourusername/my_agent_frame/wiki)
+- 🐛 **错误报告**：[GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
+- 💡 **功能请求**：[GitHub Discussions](https://github.com/JNUZXF/EchoAgent/discussions)
+- 📖 **文档**：[Wiki](https://github.com/JNUZXF/EchoAgent/wiki)
 
 ---
 
