@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from utils.file_manager import file_manager, SessionInfo
+from utils.conversation_store import ConversationStore, SessionKey
 from .models import TeamContextModel
 
 
@@ -52,6 +53,17 @@ class AgentStateManager:
         self.config.user_folder.mkdir(parents=True, exist_ok=True)
         self._conv_files: Dict[str, Any] = {}
 
+        # 可选: 数据库存储后端
+        self._conv_store: Optional[ConversationStore] = None
+        try:
+            backend = str(getattr(self.config, "storage_backend", "filesystem")).lower()
+            db_path = getattr(self.config, "db_path", None)
+            if backend == "sqlite" and db_path:
+                self._conv_store = ConversationStore(db_path=str(db_path), logger=self.logger)
+                self.logger.info("已启用SQLite会话镜像存储", extra={"event": "db_store_enabled", "db_path": str(db_path)})
+        except Exception as e:
+            self.logger.exception("初始化数据库存储后端失败: %s", e)
+
         self.init_conversations()
 
     # ========== TeamContext 读写与格式化 ==========
@@ -83,6 +95,31 @@ class AgentStateManager:
                         self.team_context = self._team_ctx_model.model_dump()
                     except Exception:
                         self.team_context = loaded if isinstance(loaded, dict) else {}
+                    # 清理历史遗留的不需要字段（如 answer）
+                    if isinstance(self.team_context, dict) and "answer" in self.team_context:
+                        try:
+                            removed_preview = str(self.team_context.get("answer"))[:120]
+                        except Exception:
+                            removed_preview = "<unprintable>"
+                        try:
+                            del self.team_context["answer"]
+                        except Exception:
+                            pass
+                        try:
+                            if self._team_ctx_model is not None:
+                                # 重新校验并同步模型
+                                self._team_ctx_model = TeamContextModel.model_validate(self.team_context)  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        self.logger.info(
+                            "清理历史TeamContext字段: 移除 answer",
+                            extra={
+                                "event": "team_context_sanitize_on_load",
+                                "removed_preview": removed_preview,
+                            },
+                        )
+                        # 立即持久化一次，避免文件中残留
+                        self.save_team_context()
                     self.logger.debug("加载team_context成功，键数: %s", len(self.team_context))
         except Exception as e:
             self.logger.exception("加载team_context失败: %s", e)
@@ -104,20 +141,43 @@ class AgentStateManager:
 
     def update_team_context(self, patch: Dict[str, Any]) -> None:
         try:
+            # 统一清洗：移除不需要写入 TeamContext 的字段
+            sanitized_patch: Dict[str, Any] = dict(patch or {})
+            if "answer" in sanitized_patch:
+                try:
+                    removed_preview = str(sanitized_patch.get("answer"))[:120]
+                except Exception:
+                    removed_preview = "<unprintable>"
+                del sanitized_patch["answer"]
+                self.logger.debug(
+                    "移除TeamContext中不需要的字段: answer",
+                    extra={
+                        "event": "team_context_sanitize_patch",
+                        "removed_preview": removed_preview,
+                    },
+                )
+
             if self._team_ctx_model is None:
                 try:
                     self._team_ctx_model = TeamContextModel.model_validate(self.team_context or {})  # type: ignore[attr-defined]
                 except Exception:
                     self._team_ctx_model = None
             if self._team_ctx_model is not None:
-                merged = self._team_ctx_model.merge_patch(patch or {})
+                merged = self._team_ctx_model.merge_patch(sanitized_patch or {})
                 try:
                     self._team_ctx_model = TeamContextModel.model_validate(merged)  # type: ignore[attr-defined]
                     self.team_context = self._team_ctx_model.model_dump()
                 except Exception:
                     self.team_context = merged
             else:
-                self.team_context = {**(self.team_context or {}), **(patch or {})}
+                self.team_context = {**(self.team_context or {}), **(sanitized_patch or {})}
+
+            # 再次兜底：若合并后仍存在 answer 则移除
+            if isinstance(self.team_context, dict) and "answer" in self.team_context:
+                try:
+                    del self.team_context["answer"]
+                except Exception:
+                    pass
             self.logger.info("更新TeamContext", extra={"event": "team_context_update", "patch_preview": str(patch)[:400]})
             self.save_team_context()
         except Exception as e:
@@ -309,6 +369,8 @@ class AgentStateManager:
                 self._save_with_session()
             else:
                 self._save_without_session()
+            # 可选: 数据库镜像
+            self._save_to_db_if_enabled()
         except Exception as e:
             self.logger.exception("保存对话历史时出错: %s", e)
 
@@ -344,5 +406,30 @@ class AgentStateManager:
             except Exception as e:
                 self.logger.error(f"保存{filename}文件失败: {e}")
         self.save_team_context()
+
+    # ========== 数据库镜像写入 ==========
+    def _save_to_db_if_enabled(self) -> None:
+        try:
+            if self._conv_store is None:
+                return
+            # 仅当存在 session 时写入数据库，确保 session_id 稳定
+            if self.session is None:
+                return
+            key = SessionKey(
+                user_id=str(getattr(self.config, "user_id", "unknown")),
+                agent_name=str(getattr(self.config, "agent_name", "agent")),
+                session_id=str(self.session.session_id),
+            )
+            self._conv_store.save_snapshot(
+                key=key,
+                messages=self.conversations,
+                display_md=self.display_conversations,
+                full_md=self.full_context_conversations,
+                tool_conversations=self.tool_conversations,
+                tool_execute_md=self.tool_execute_conversations,
+                team_context=self.team_context or {},
+            )
+        except Exception as e:
+            self.logger.exception("数据库镜像写入失败: %s", e)
 
 

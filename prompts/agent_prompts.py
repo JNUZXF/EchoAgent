@@ -69,6 +69,12 @@ AGENT_SYSTEM_PROMPT = dedent("""
 
    ---
 
+   # 可用工具说明
+   以下是你可以使用的工具列表与使用说明（来自工具的注释）：
+   {TOOL_DOCS}
+
+   ---
+
 """).strip().replace("  ", "")
 
 AGENT_JUDGE_PROMPT = dedent("""

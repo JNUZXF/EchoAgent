@@ -1,491 +1,591 @@
-# EchoAgent - 智能体框架
+# EchoAgent 智能体框架 🤖
 
-<div align="center">
+**中文** | [English](README.md)
 
-![EchoAgent Logo](https://img.shields.io/badge/EchoAgent-智能体框架-blue?style=for-the-badge)
-![Python](https://img.shields.io/badge/Python-3.8+-green?style=for-the-badge&logo=python)
-![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
-![GitHub Stars](https://img.shields.io/github/stars/JNUZXF/EchoAgent?style=for-the-badge)
+下一代智能体框架，结合模块化架构与强大的工具集成能力，支持多种大模型和可扩展的工具生态系统。
 
-**先回答，再决策的智能体框架 | Answer First, Then Decide Agent Framework**
+## ✨ 核心特性
 
-[🇨🇳 中文](#chinese) • [🇺🇸 English](README.md)
+### 🏗️ 模块化架构
+- **分层设计**：工具管理、状态管理、提示词管理的清晰分离
+- **高内聚、低耦合**：每个模块具有明确的边界和接口
+- **可扩展设计**：轻松添加新工具、模型和功能
 
-[快速开始](#-快速开始) • [特性](#-核心特性) • [架构](#%EF%B8%8F-架构设计) • [文档](#-使用文档) • [贡献](#-贡献指南)
+### 🔧 多工具集成
+- **内置工具**：代码执行、数据分析、文件操作
+- **MCP协议**：完整支持模型上下文协议标准工具
+- **自定义工具**：使用`@tool`装饰器轻松注册自定义工具
+- **动态加载**：运行时工具发现和注册
 
-</div>
+### 🎯 多模型支持
+- **OpenAI**：GPT-4、GPT-4o、GPT-4o-mini
+- **Anthropic**：Claude Sonnet 4
+- **Google**：Gemini 2.5 Flash/Pro
+- **阿里巴巴**：通义千问 3 Next、通义千问 3 Max
+- **字节跳动**：豆包 Pro/Seed
+- **更多模型**：易于扩展支持新模型
 
----
+### 💾 持久化会话
+- **文件存储**：Markdown格式的结构化对话历史
+- **SQLite后端**：可选的数据库存储，支持高级查询
+- **会话恢复**：跨重启恢复对话
+- **团队上下文**：多智能体间的共享上下文
 
-## Chinese
+### ⚙️ 灵活配置
+- **Pydantic设置**：类型安全的配置验证
+- **环境变量**：简化部署配置
+- **多环境支持**：支持不同部署环境配置
+- **热重载**：无需重启即可应用配置变更
 
-### 📖 项目简介
+## 📋 目录
 
-EchoAgent 是一个创新的智能体框架，采用独特的"**先回答-再判断-工具调用-END()终止**"机制。与传统的先调用工具再回答的模式不同，EchoAgent 让主模型首先基于已有知识直接回答用户问题，然后由决策模型判断是否需要调用工具进行进一步处理。
+- [安装](#安装)
+- [快速开始](#快速开始)
+- [配置说明](#配置说明)
+- [使用示例](#使用示例)
+- [工具开发](#工具开发)
+- [API参考](#api参考)
+- [高级功能](#高级功能)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
+- [联系方式](#联系方式)
 
-### 🌟 核心特性
+## 🚀 安装
 
-- **🔄 双模型协同**: 主模型负责回答，决策模型负责判断工具调用
-- **⚡ 快速响应**: 先给出直接回答，再根据需要深入处理
-- **🛡️ 安全执行**: 内置代码执行器，支持安全的 Python 代码运行
-- **🔧 工具生态**: 丰富的工具集，支持文档处理、数据分析、网络搜索等，以及增强的ArXiv论文检索系统，支持批量处理和断点续传
-- **📊 持久化上下文**: 跨对话的变量保持，支持连续的数据分析任务
-- **🎯 智能终止**: 通过 `END()` 信号实现智能的任务完成判断
-
-### 🏗️ 架构设计
-
-```mermaid
-graph TD
-    A["用户问题"] --> B["主模型直接回答"]
-    B --> C["决策模型判断"]
-    C --> D{"需要工具?"}
-    D -->|"是"| E["调用工具"]
-    D -->|"否"| F["输出 END()"]
-    E --> G["工具执行结果"]
-    G --> H["更新上下文 (含 TeamContext)"]
-    H --> I["主模型分析结果"]
-    I --> C
-    F --> J["任务完成"]
-```
-
-#### 核心组件
-
-- **AgentConfig**: 配置管理，支持多用户、多模型
-- **AgentStateManager**: 状态管理，处理对话历史和文件存储
-- **AgentToolManager**: 工具管理，统一注册和调用本地/远程工具
-- **LLMManager**: 大模型管理，支持多种 LLM 提供商
-- **CodeExecutor**: 安全代码执行器，支持持久化上下文
-
-### 🚀 快速开始
-
-#### 环境要求
+### 环境要求
 
 - Python 3.8+
-- 支持的 LLM 提供商 API 密钥（豆包、OpenAI、Claude 等）
+- pip 或 conda 包管理器
 
-#### 安装步骤
+### 安装依赖
 
-1. **克隆项目**
 ```bash
-git clone https://github.com/JNUZXF/EchoAgent.git
-cd EchoAgent
+# 克隆仓库
+git clone https://github.com/yourusername/my_agent_frame.git
+cd my_agent_frame
+
+# 安装所需包
+pip install -r requirements.txt
 ```
 
-2. **创建并激活虚拟环境**
-```bash
-# Windows (PowerShell)
-python -m venv venv
-./venv/Scripts/Activate.ps1
+### 环境设置
 
-# macOS/Linux (bash)
-python3 -m venv venv
-source venv/bin/activate
+在项目根目录创建 `.env` 文件：
+
+```bash
+# 复制示例配置
+cp config.env.example .env
+
+# 编辑配置文件
+# 添加您的API密钥和模型配置
 ```
 
-3. **安装依赖**
-```bash
-pip install -r requirements.txt  # 需要创建此文件
+示例 `.env` 配置：
+
+```env
+# 基础配置
+AGENT_USER_ID=your_user_id
+AGENT_NAME=my_agent
+MAIN_MODEL=openai/gpt-4o-2024-11-20
+TOOL_MODEL=openai/gpt-4o-mini
+FLASH_MODEL=openai/gpt-4o-mini
+
+# API密钥（添加您需要的）
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GOOGLE_API_KEY=your_google_key
+
+# 可选：MCP工具
+ENABLE_MCP=true
+MCP_CONFIG_PATH=server_config.json
+
+# 可选：高级设置
+MAX_HISTORY=100
+MAX_TOKENS=8000
+LOG_LEVEL=INFO
 ```
 
-4. **配置环境变量**
-```bash
-# 复制环境变量模板
-cp .env.example .env
+## 🎯 快速开始
 
-# 编辑 .env 文件，添加你的 API 密钥
-DOUBAO_API_KEY=your_doubao_api_key
-OPENAI_API_KEY=your_openai_api_key
-# 更多配置...
+### 基础使用
+
+```python
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
+
+async def main():
+    # 创建配置
+    config = create_agent_config(
+        user_id="demo_user",
+        main_model="openai/gpt-4o-2024-11-20",
+        tool_model="openai/gpt-4o-mini", 
+        flash_model="openai/gpt-4o-mini",
+        agent_name="my_assistant"
+    )
+    
+    # 初始化智能体
+    agent = EchoAgent(config)
+    
+    # 交互式聊天循环
+    await agent.chat_loop_common(version="v2")
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-5. **运行示例**
+### 命令行界面
+
 ```bash
+# 使用默认配置运行智能体
 python agent_frame.py
+
+# 或使用特定模型
+MAIN_MODEL="anthropic/claude-sonnet-4" python agent_frame.py
 ```
 
-运行期间支持 CLI 快捷命令：
+## ⚙️ 配置说明
 
-- `/reset`：删除当前会话目录并重建会话（生成新的 session_id）
-- `/reset keep`：删除当前会话目录但保留 session_id
+### 配置方法
 
-#### 基础使用
+1. **环境变量**（生产环境推荐）
+2. **`.env` 文件**（开发环境推荐）
+3. **程序化配置**（嵌入式使用）
+
+### 主要配置选项
+
+| 参数 | 描述 | 默认值 | 示例 |
+|------|------|--------|------|
+| `user_id` | 用户唯一标识符 | 必需 | `"john_doe"` |
+| `main_model` | 主要对话模型 | `"doubao-seed-1-6-250615"` | `"openai/gpt-4o"` |
+| `tool_model` | 工具意图识别模型 | `"doubao-pro"` | `"openai/gpt-4o-mini"` |
+| `flash_model` | 快速响应模型 | `"doubao-pro"` | `"openai/gpt-4o-mini"` |
+| `max_conversation_history` | 保留的最大对话轮数 | `100` | `50` |
+| `enable_mcp` | 启用MCP工具集成 | `true` | `false` |
+| `log_level` | 日志详细程度 | `"INFO"` | `"DEBUG"` |
+
+### 模型配置示例
 
 ```python
-from agent_frame import EchoAgent, AgentConfig
-
-# 创建配置
-config = AgentConfig(
-    user_id="demo_user",
-    main_model="doubao-pro",
-    tool_model="doubao-pro", 
-    flash_model="doubao-pro"
+# OpenAI配置
+config = create_agent_config(
+    user_id="user",
+    main_model="openai/gpt-4o-2024-11-20",
+    tool_model="openai/gpt-4o-mini",
+    flash_model="openai/gpt-4o-mini"
 )
 
-# 初始化智能体
-agent = EchoAgent(config)
-
-# 启动对话
-await agent.chat_loop()
-```
-
-### 📚 使用文档
-
-#### 工具系统
-#### 🔁 重置聊天（清空对话与会话目录）
-
-新增 `EchoAgent.reset_chat(preserve_session_id: bool = False)` 用于一键回到“刚刚初始化”的干净状态：
-
-- 会删除当前会话目录下的所有文件与子目录（包含 `conversations/`, `logs/`, `artifacts/` 等）；
-- 会释放日志句柄，解决 Windows 上日志文件占用导致无法删除的问题；
-- 会清空内存中的对话历史、显示上下文、工具上下文与 TeamContext；
-- 会重新创建会话与日志；默认生成新的 `session_id`（传入 `preserve_session_id=True` 可保留原会话ID）。
-
-示例：
-
-```python
-agent.reset_chat()                 # 删除会话目录并生成新 session_id
-agent.reset_chat(True)             # 删除会话目录但保留原 session_id
-```
-
-在 CLI 中：
-
-```text
-/reset            # 等同于 agent.reset_chat()
-/reset keep       # 等同于 agent.reset_chat(True)
-```
-
-典型场景：
-
-- 需要彻底清空之前的聊天与产物，开始全新对话
-- 遇到日志被占用（Windows）导致会话目录无法删除
-- 需要快速回滚到干净环境做复现
-
-
-EchoAgent 内置多种工具：
-
-**CodeRunner - 代码执行器（基于会话的持久化）**
-```python
-from utils.code_runner import execute_code, quick_run, reset_session_context
-
-# 固定一个 session_id，用于多次执行间的变量持久化
-session_id = "demo-session-001"
-
-# 第一次执行：定义变量
-execute_code("""
-import pandas as pd
-df = pd.DataFrame({'A':[1,2,3]})
-x = 10
-""", session_id=session_id)
-
-# 第二次执行：复用 df 与 x
-res = execute_code("""
-df['B'] = df['A'] + x
-print(df)
-df.shape
-""", session_id=session_id)
-print(res['result'])  # -> (3, 2)
-
-# 需要全新开始时重置会话上下文
-reset_session_context(session_id)
-```
-
-说明：
-- 传入 `session_id` 时，将复用对应会话的 `CodeExecutor`，默认开启持久化；
-- 不传 `session_id` 时，保持原有隔离语义：每次调用创建新执行器，不共享变量。
-
-**文档处理工具**
-- PDF 阅读和转换
-- 文档向量化和检索
-- 图像处理和OCR
-
-#### ReAgent 变量传参与共享指南
-
-详见文档：`docs/ReAgent_变量传参与共享指南.md`（包含“初始化传入公司研究计划、对话、更新计划、SubAgent 共享读取”的完整示例）。
-
-**数据分析工具**
-- 股票数据获取
-- 财务报表分析
-- 数据可视化
-
-### 📚 增强的ArXiv论文检索系统
-
-框架包含一个强大的ArXiv论文检索系统，具有以下改进：
-
-#### 主要特性
-- **🔄 批量处理**: 通过分批处理支持大规模搜索（1000+篇论文）
-- **💾 断点续传**: 自动进度保存和恢复功能，支持中断后继续
-- **🛡️ 错误处理**: 增强的重试机制和API限制管理
-- **📊 详细日志**: 全面的日志记录，支持文件输出便于调试
-- **🎯 多字段搜索**: 支持标题、作者、摘要和类别的组合搜索
-
-#### 使用示例
-```python
-from agent_cases.research_agent.arxiv_search import ArxivSearcher, SearchField
-
-# 初始化批量处理搜索器
-searcher = ArxivSearcher(
-    download_dir="./arxiv_papers", 
-    max_workers=3,
-    batch_size=500  # 每批处理500篇论文
+# Anthropic配置  
+config = create_agent_config(
+    user_id="user",
+    main_model="anthropic/claude-sonnet-4",
+    tool_model="anthropic/claude-haiku-3",
+    flash_model="anthropic/claude-haiku-3"
 )
 
-# 大规模搜索，支持断点续传
-papers, stats = searcher.search_and_download(
-    query="agent",
-    search_field=SearchField.TITLE,
-    search_num=3000,  # 可处理数千篇论文
-    sort_by=arxiv.SortCriterion.LastUpdatedDate,
-    download=False  # 先搜索，后下载
-)
-
-# 恢复中断的搜索
-if searcher.progress_file.exists():
-    papers = searcher.resume_search()
-```
-
-#### 主要改进
-- **API限制管理**: 增加延迟和较小批次大小，避免ArXiv API限制
-- **进度持久化**: 基于JSON的自动进度保存和恢复
-- **增强错误恢复**: 针对不同类型故障的多重重试策略
-- **智能批处理**: 根据API响应自适应调整批次大小
-
-### 扩展开发
-
-#### 添加自定义工具
-
-1. **创建工具类**
-```python
-class MyTool:
-    def execute(self, **kwargs):
-        # 工具逻辑
-        return result
-```
-
-2. **注册工具**
-```python
-agent.tool_manager.register_local_tool(
-    "my_tool", 
-    MyTool(), 
-    tool_config_for_prompt
+# 混合提供商配置
+config = create_agent_config(
+    user_id="user", 
+    main_model="anthropic/claude-sonnet-4",
+    tool_model="openai/gpt-4o-mini",
+    flash_model="google/gemini-2.5-flash"
 )
 ```
 
-### 🤝 多智能体共享上下文（TeamContext）
+## 📚 使用示例
 
-- 共享变量组合通过 `TeamContext` 管理，落盘在会话目录的 `conversations/team_context.json`。
-- 系统提示会自动注入当前的 TeamContext，工具结果可自动合并上下文增量。
-
-最小示例：
+### 示例1：数据分析智能体
 
 ```python
-from agent_frame_v3_0908 import EchoAgent, AgentConfig
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
 
-config = AgentConfig(
-    user_id="ada",
-    main_model="doubao-pro",
-    tool_model="doubao-pro",
-    flash_model="doubao-pro",
-    agent_name="echo_agent",
-)
-agent = EchoAgent(config)
+async def data_analysis_example():
+    config = create_agent_config(
+        user_id="analyst",
+        agent_name="data_analyst",
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="openai/gpt-4o-mini",
+        user_system_prompt="你是一个数据分析专家。总是为数据洞察提供可视化展示。"
+    )
+    
+    agent = EchoAgent(config)
+    
+    # 处理查询并获得流式响应
+    query = "为AAPL和MSFT创建模拟股票数据，然后分析它们的相关性并创建可视化图表"
+    
+    async for response_chunk in agent.process_query(query, version="v2"):
+        print(response_chunk, end="", flush=True)
 
-agent.set_team_goal("完善多Agent协作Demo")
-agent.update_team_context({
-    "objectives": ["定义角色", "实现共享上下文"],
-    "next_actions": ["联动工具输出到上下文"]
-})
-
-# 可选：设置跨Agent共享的外部文件
-# agent.set_team_context_override_path("./shared/team_context.json")
-
-# 之后正常对话/调用，系统提示将带有 TeamContext
-# await agent.chat_loop()
+asyncio.run(data_analysis_example())
 ```
 
-详细说明与流程图见文档：`docs/多智能体共享上下文设计与流程图.md`。
-
-### ✅ 本次架构精简与 Pydantic 集成（2025-09-10）
-
-- 引入 `ToolEventModel`、`IntentionResultModel`、`TeamContextModel` 三个 Pydantic 模型：
-  - 事件统一序列化（保留 `[[TOOL_EVENT]]` 前缀格式，前端免改）
-  - 意图结果严格校验（无效工具名会被过滤）
-  - TeamContext 标准化与合并（支持扩展字段，兼容旧数据）
-- 精简 `_create_tool_event` 的重复分支逻辑
-- TeamContext 读写新增模型校验，降低无效数据写入风险
-
-详见：`docs/工具集成优化.md`（增补部分）
-
-3. **更新工具配置**
-在 `tools_configs.py` 中添加工具描述。
-
-### 🔧 配置说明
-
-#### 支持的模型
+### 示例2：带自定义工具的研究智能体
 
 ```python
-# 豆包系列
-"doubao-pro", "doubao-1.5-lite", "doubao-1.5-pro-256k"
+from pydantic import BaseModel, Field
+from tools_agent.toolkit import tool
+from agent_frame import EchoAgent, create_agent_config
 
-# OpenAI 系列  
-"gpt-4o", "gpt-4o-mini"
+# 定义自定义工具
+class SearchArgs(BaseModel):
+    query: str = Field(..., description="搜索查询")
+    max_results: int = Field(10, description="最大结果数")
 
-# Claude 系列
-"anthropic/claude-3.5-sonnet"
+@tool
+def search_papers(args: SearchArgs):
+    """搜索学术论文并返回摘要"""
+    # 您的搜索实现
+    return {"papers": f"找到与以下内容相关的论文：{args.query}"}
 
-# 开源模型
-"opensource/llama-3.1-8b"
+async def research_agent_example():
+    config = create_agent_config(
+        user_id="researcher",
+        agent_name="research_assistant", 
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="google/gemini-2.5-flash",
+        user_system_prompt="你是一个专门从事学术文献综述的研究助手。"
+    )
+    
+    agent = EchoAgent(config)
+    
+    # 注册自定义工具
+    agent.tool_manager.register_tool_function(search_papers)
+    
+    # 使用智能体
+    query = "搜索关于LLM智能体的最新论文并总结关键创新点"
+    async for response in agent.process_query(query, version="v2"):
+        print(response, end="", flush=True)
+
+asyncio.run(research_agent_example())
 ```
 
-#### 安全配置
+### 示例3：团队上下文共享
 
-CodeExecutor 支持三种安全级别：
-- `strict`: 仅允许基本标准库
-- `medium`: 允许常用科学计算库（默认）
-- `permissive`: 允许大部分库，仅禁止危险操作
+```python
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
 
-### 📁 项目结构
+async def team_context_example():
+    # 创建两个具有共享上下文的智能体
+    config1 = create_agent_config(
+        user_id="team_user",
+        agent_name="agent_1",
+        main_model="openai/gpt-4o",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="openai/gpt-4o-mini"
+    )
+    
+    config2 = create_agent_config(
+        user_id="team_user", 
+        agent_name="agent_2",
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini", 
+        flash_model="openai/gpt-4o-mini"
+    )
+    
+    agent1 = EchoAgent(config1)
+    agent2 = EchoAgent(config2)
+    
+    # 设置共享上下文路径
+    shared_context_path = "shared_team_context.json"
+    agent1.set_team_context_override_path(shared_context_path)
+    agent2.set_team_context_override_path(shared_context_path)
+    
+    # 智能体1设置团队目标
+    agent1.set_team_goal("开发一个具有React前端和Python后端的Web应用程序")
+    
+    # 智能体2可以访问共享上下文
+    team_context = agent2.get_team_context()
+    print(f"共享团队目标：{team_context.get('team_goal', '无')}")
+
+asyncio.run(team_context_example())
+```
+
+## 🔧 工具开发
+
+### 创建自定义工具
+
+框架使用基于装饰器的方法进行工具注册：
+
+```python
+from pydantic import BaseModel, Field
+from tools_agent.toolkit import tool
+from typing import Optional
+
+# 定义工具的输入模式
+class WebScrapingArgs(BaseModel):
+    url: str = Field(..., description="要抓取的URL")
+    selector: Optional[str] = Field(None, description="特定内容的CSS选择器")
+    max_length: int = Field(5000, description="最大内容长度")
+
+@tool
+def web_scraper(args: WebScrapingArgs):
+    """
+    从网页抓取内容
+    
+    此工具获取并提取网页内容。
+    
+    使用示例：
+    {"tools": ["web_scraper(url='https://example.com', selector='article', max_length=3000)"]}
+    """
+    import requests
+    from bs4 import BeautifulSoup
+    
+    try:
+        response = requests.get(args.url, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        if args.selector:
+            content = soup.select_one(args.selector)
+            text = content.get_text(strip=True) if content else ""
+        else:
+            text = soup.get_text(strip=True)
+        
+        # 如果太长则截断
+        if len(text) > args.max_length:
+            text = text[:args.max_length] + "..."
+        
+        return {
+            "content": text,
+            "url": args.url,
+            "length": len(text)
+        }
+        
+    except Exception as e:
+        return {"error": f"抓取 {args.url} 失败：{str(e)}"}
+
+# 注册工具
+agent.tool_manager.register_tool_function(web_scraper)
+```
+
+### 工具开发最佳实践
+
+1. **清晰的输入模式**：使用带有描述性字段的Pydantic模型
+2. **全面的文档字符串**：包括目的、参数和示例
+3. **错误处理**：始终优雅地处理异常
+4. **返回结构化数据**：使用具有一致键的字典
+5. **性能考虑**：设置超时和限制
+
+### MCP工具集成
+
+对于模型上下文协议工具，创建 `server_config.json`：
+
+```json
+{
+  "research_server": {
+    "command": "python",
+    "args": ["research_server.py"],
+    "env": {
+      "PYTHONPATH": "."
+    }
+  },
+  "file_server": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"]
+  }
+}
+```
+
+## 📖 API参考
+
+### EchoAgent类
+
+#### 初始化
+```python
+agent = EchoAgent(config: AgentSettings)
+```
+
+#### 核心方法
+- `process_query(question: str, version: str) -> AsyncGenerator[str, None]`
+  - 处理用户查询并提供流式响应
+- `chat_loop_common(version: str) -> None`
+  - 启动交互式CLI聊天会话
+- `reset_chat(preserve_session_id: bool = False) -> None`
+  - 重置对话状态
+
+#### 团队上下文管理
+- `set_team_context_override_path(path: str) -> None`
+  - 设置共享上下文文件路径
+- `update_team_context(patch: Dict[str, Any]) -> None`
+  - 更新团队上下文
+- `get_team_context() -> Dict[str, Any]`
+  - 获取当前团队上下文
+
+### 配置工厂
+
+```python
+config = create_agent_config(
+    user_id: str,
+    main_model: str,
+    tool_model: str,
+    flash_model: str,
+    agent_name: str = "echo_agent",
+    conversation_id: Optional[str] = None,
+    workspace: Optional[str] = None,
+    user_system_prompt: Optional[str] = None,
+    use_new_config: bool = True,
+    enable_mcp: bool = True,
+    **kwargs
+) -> AgentSettings
+```
+
+## 🚀 高级功能
+
+### 自定义工具执行上下文
+
+```python
+# 具有上下文访问的自定义工具
+@tool
+def context_aware_tool(args: MyArgs):
+    """访问对话上下文的工具"""
+    # 访问当前会话信息
+    session_info = get_current_session()
+    return {"result": "使用上下文感知处理"}
+```
+
+### 异步工具支持
+
+```python
+from tools_agent.toolkit import tool
+
+@tool
+async def async_api_call(args: APIArgs):
+    """用于API调用的异步工具"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(args.url) as response:
+            return await response.json()
+```
+
+### 多智能体协调
+
+```python
+async def multi_agent_workflow():
+    # 创建专门的智能体
+    researcher = EchoAgent(research_config)
+    analyst = EchoAgent(analysis_config)
+    writer = EchoAgent(writing_config)
+    
+    # 设置共享上下文
+    shared_path = "project_context.json"
+    for agent in [researcher, analyst, writer]:
+        agent.set_team_context_override_path(shared_path)
+    
+    # 研究阶段
+    research_query = "研究AI的最新趋势"
+    research_result = await researcher.process_query(research_query, "v2")
+    
+    # 分析阶段  
+    analysis_query = "分析研究发现"
+    analysis_result = await analyst.process_query(analysis_query, "v2")
+    
+    # 写作阶段
+    writing_query = "创建综合报告"
+    final_report = await writer.process_query(writing_query, "v2")
+```
+
+## 🏗️ 项目结构
 
 ```
-EchoAgent/
-├── agent_frame_v6.py      # 主工作流（v6 入口）
-├── agent_core/            # 核心模块化组件
-│   ├── __init__.py        # 对外导出常用类
-│   ├── models.py          # ToolEventModel、IntentionResultModel、TeamContextModel
-│   ├── state_manager.py   # AgentStateManager
-│   ├── tools.py           # LocalToolManager、AgentToolManager
-│   └── prompts.py         # AgentPromptManager
-├── config/                # 配置管理
-│   ├── __init__.py        # 导出 AgentSettings、create_agent_config
-│   └── agent_config.py
-├── prompts/               # 提示词模板
-│   └── agent_prompts.py
-├── tools_agent/           # 工具实现与注册
-│   ├── llm_manager.py     # LLM 管理
-│   └── ...
-├── utils/                 # 工具函数（代码执行/文件管理等）
-│   ├── code_runner.py
-│   └── ...
-├── docs/                  # 指南与架构说明
-├── files/                 # 用户/会话数据
-├── workspaces/            # 多项目/多团队隔离（可选）
-└── requirements.txt
+my_agent_frame/
+├── agent_core/                 # 核心框架模块
+│   ├── __init__.py            # 模块导出
+│   ├── mcp_manager.py         # MCP协议集成
+│   ├── models.py              # Pydantic数据模型
+│   ├── prompts.py             # 提示词管理
+│   ├── state_manager.py       # 对话状态管理
+│   └── tools.py               # 工具管理系统
+├── config/                     # 配置管理
+│   ├── __init__.py
+│   └── agent_config.py        # 基于Pydantic的配置
+├── tools_agent/               # 工具系统实现
+│   ├── builtin_tools.py       # 内置工具（CodeRunner等）
+│   ├── function_call_toolbox.py # 函数解析工具
+│   ├── llm_manager.py         # 多提供商LLM管理
+│   ├── parse_function_call.py # 函数调用解析
+│   └── toolkit.py             # 工具注册系统
+├── utils/                     # 工具模块
+│   ├── conversation_store.py  # SQLite对话存储
+│   ├── file_manager.py        # 文件系统管理
+│   └── code_runner.py         # 代码执行工具
+├── prompts/                   # 提示词模板
+│   └── agent_prompts.py       # 系统和工具提示词
+├── files/                     # 会话存储目录
+├── workspaces/                # 用户工作空间目录
+├── agent_frame.py             # 主框架入口点
+├── requirements.txt           # Python依赖
+├── config.env.example         # 环境配置模板
+└── README_CN.md               # 本文档
 ```
 
 ## 🤝 贡献指南
 
-我们欢迎所有形式的贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 获取详细指南。
-
-### 贡献方式
-
-1. **报告问题**: 使用 [Issue 模板](.github/ISSUE_TEMPLATE/) 报告 bug
-2. **功能建议**: 提交功能请求和改进建议  
-3. **代码贡献**: Fork 项目，创建分支，提交 PR
-4. **文档改进**: 完善文档和示例
+我们欢迎贡献！请查看我们的[贡献指南](CONTRIBUTING.md)了解详情。
 
 ### 开发环境设置
 
 ```bash
+# 克隆仓库
+git clone https://github.com/yourusername/my_agent_frame.git
+cd my_agent_frame
+
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 安装依赖
+pip install -r requirements.txt
+
 # 安装开发依赖
-pip install -r requirements-dev.txt
+pip install black flake8 mypy pytest pytest-asyncio
 
 # 运行测试
-python -m pytest tests/
+pytest tests/
 
-# 代码格式化
-black agent_frame.py
+# 格式化代码
+black .
+
+# 类型检查
+mypy agent_core/ tools_agent/
 ```
 
-## 📋 待办事项
+### 指导原则
 
-查看 [ToDo.md](ToDo.md) 了解当前的优化计划和可认领的任务。
-
-## 🐛 问题排查
-
-### 常见问题
-
-**Q: 工具调用失败怎么办？**
-A: 检查 `files/{user_id}/{agent_name}/tool_conversations.json` 中的详细日志。
-
-**Q: 代码执行超时？**
-A: 调整 `CodeExecutor` 的 `timeout` 参数，或检查代码复杂度。
-
-**Q: API 调用失败？**
-A: 确认 `.env` 文件中的 API 密钥配置正确。
-
-### 日志查看
-
-```bash
-# 查看完整对话历史
-cat files/{user_id}/{agent_name}/{session_id}/conversations/full_context_conversations.md
-
-# 查看工具执行日志
-cat files/{user_id}/{agent_name}/{session_id}/conversations/tool_conversations.json
-```
-
-### 🔄 最近修复（2025-09-10）
-
-- 修复 CodeRunner 旧错误反复出现：`agent_frame_v5.py` 在每次工具执行与分析结束后，会从会话中获取“最新助手回复”，下一轮 `CodeRunner` 从这条消息中提取代码，不再复用旧代码；并新增 DEBUG 日志方便排查。详见 `docs/CodeRunner重复错误修复说明.md`。
-
-### 🧩 模块化核心（2025-09-10）
-
-- 新增 `agent_core/` 包，核心类从 `agent_frame_v6.py` 抽离：
-  - `models.py`: ToolEventModel、IntentionResultModel、TeamContextModel
-  - `state_manager.py`: AgentStateManager
-  - `tools.py`: LocalToolManager、AgentToolManager
-  - `prompts.py`: AgentPromptManager
-- 向后兼容：工具事件 `[[TOOL_EVENT]]{...}` 包装未改动。
-- 导入方式：
-```python
-from agent_core import (
-  AgentStateManager, AgentToolManager, AgentPromptManager,
-  ToolEventModel, IntentionResultModel, TeamContextModel,
-)
-```
-
-详见：`docs/Agent模块化重构.md`。
-
-### 🧾 生产级日志
-
-每次会话的日志存放在 `files/{user_id}/{agent_name}/{session_id}/logs/` 下：
-
-- `agent.log`：富文本轮转日志（控制台 INFO+、文件 DEBUG+）
-- `error.log`：仅 ERROR 的轮转日志
-- `events.jsonl`：结构化 JSON 事件日志（一行一个事件）
-
-每条日志包含上下文字段：`user_id`、`agent_name`、`session_id`。关键生命周期事件会被记录：会话初始化、用户提问、LLM 流式阶段、工具开始/结束、错误、完成耗时。对话记录位于 `conversations/`：`conversations.json`、`display_conversations.md`、`full_context_conversations.md`、`tool_conversations.json`。
-
-可用环境变量调整行为：
-
-```bash
-AGENT_LOG_MAX_BYTES=5242880      # 每个日志文件最大大小（默认 5MB）
-AGENT_LOG_BACKUP=5               # 轮转文件数量（默认 5）
-AGENT_LOG_CONSOLE_LEVEL=INFO     # 控制台级别（默认 INFO）
-AGENT_LOG_FILE_LEVEL=DEBUG       # 文件级别（默认 DEBUG）
-```
+- 遵循PEP 8代码风格指南
+- 为所有函数添加类型提示
+- 编写全面的文档字符串
+- 为新功能包含单元测试
+- 为API变更更新文档
 
 ## 📄 许可证
 
-本项目采用 [MIT 许可证](LICENSE)。
+本项目采用MIT许可证 - 详见[LICENSE](LICENSE)文件。
 
-## 🙏 致谢
+## 📞 联系方式
 
-感谢以下项目和社区的支持：
-- [LangChain](https://github.com/langchain-ai/langchain) - 启发了工具链设计
-- [OpenAI](https://openai.com/) - API 支持
-- [字节跳动](https://www.volcengine.com/) - 豆包模型支持
+### 开发者
 
-## 📞 联系我们
+**您的姓名**  
+📧 邮箱：your.email@example.com  
+🐙 GitHub：[@yourusername](https://github.com/yourusername)  
 
-- 提交 Issue: [GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
-- 邮箱: JNUZXF@163.com
-- 微信: ![微信二维码](images/wechatID.jpg)
+### 微信联系
+
+扫描二维码添加微信：
+
+![微信二维码](images/wechatID.jpg)
+
+### 支持
+
+- 🐛 **错误报告**：[GitHub Issues](https://github.com/yourusername/my_agent_frame/issues)
+- 💡 **功能请求**：[GitHub Discussions](https://github.com/yourusername/my_agent_frame/discussions)
+- 📖 **文档**：[Wiki](https://github.com/yourusername/my_agent_frame/wiki)
 
 ---
 
-<div align="center">
+**由EchoAgent团队用❤️构建**
 
-**⭐ 如果这个项目对你有帮助，请给我们一个星标！**
-
-[⬆ 回到顶部](#echoagent---智能体框架)
-
-</div>
+*让AI智能体对每个人都更易于访问、扩展和强大。*

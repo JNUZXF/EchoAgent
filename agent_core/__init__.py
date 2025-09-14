@@ -12,6 +12,14 @@ from .state_manager import AgentStateManager
 from .tools import LocalToolManager, AgentToolManager
 from .prompts import AgentPromptManager
 
+# MCP管理器可选导入
+try:
+    from .mcp_manager import MCPManager
+    _mcp_available = True
+except ImportError:
+    MCPManager = None
+    _mcp_available = False
+
 __all__ = [
     "ToolEventModel",
     "IntentionResultModel",
@@ -21,5 +29,8 @@ __all__ = [
     "AgentToolManager",
     "AgentPromptManager",
 ]
+
+if _mcp_available:
+    __all__.append("MCPManager")
 
 

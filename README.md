@@ -1,541 +1,591 @@
-# EchoAgent - Agent Framework
+# EchoAgent Framework 🤖
 
-<div align="center">
+[中文文档](README_CN.md) | **English**
 
-![EchoAgent Logo](https://img.shields.io/badge/EchoAgent-Agent%20Framework-blue?style=for-the-badge)
-![Python](https://img.shields.io/badge/Python-3.8+-green?style=for-the-badge&logo=python)
-![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
-![GitHub Stars](https://img.shields.io/github/stars/JNUZXF/EchoAgent?style=for-the-badge)
+A next-generation intelligent agent framework that combines modular architecture with powerful tool integration capabilities, supporting multiple LLMs and extensible tool ecosystems.
 
-**Answer First, Then Decide Agent Framework | 先回答，再决策的智能体框架**
+## ✨ Key Features
 
-[🇺🇸 English](#english) • [🇨🇳 中文](README_CN.md)
+### 🏗️ Modular Architecture
+- **Layered Design**: Clean separation of tool management, state management, and prompt management
+- **High Cohesion, Low Coupling**: Each module has clear boundaries and interfaces
+- **Extensible by Design**: Easy to add new tools, models, and features
 
-[Quick Start](#-quick-start) • [Features](#-core-features) • [Architecture](#%EF%B8%8F-architecture-design) • [Documentation](#-usage-guide) • [Contributing](#-contributing)
+### 🔧 Multi-Tool Integration
+- **Built-in Tools**: Code execution, data analysis, file operations
+- **MCP Protocol**: Full support for Model Context Protocol standard tools
+- **Custom Tools**: Easy registration of custom tools with `@tool` decorator
+- **Dynamic Loading**: Runtime tool discovery and registration
 
-</div>
+### 🎯 Multi-Model Support
+- **OpenAI**: GPT-4, GPT-4o, GPT-4o-mini
+- **Anthropic**: Claude Sonnet 4
+- **Google**: Gemini 2.5 Flash/Pro
+- **Alibaba**: Qwen 3 Next, Qwen 3 Max
+- **ByteDance**: Doubao Pro/Seed
+- **And more**: Easily extensible to new models
 
----
+### 💾 Persistent Sessions
+- **File-based Storage**: Structured conversation history in markdown
+- **SQLite Backend**: Optional database storage for advanced queries
+- **Session Recovery**: Resume conversations across restarts
+- **Team Context**: Shared context between multiple agents
 
-## English
+### ⚙️ Flexible Configuration
+- **Pydantic Settings**: Type-safe configuration with validation
+- **Environment Variables**: Easy deployment configuration
+- **Multiple Profiles**: Support for different deployment environments
+- **Hot Reload**: Configuration changes without restart
 
-### 📖 Project Overview
+## 📋 Table of Contents
 
-EchoAgent is an innovative agent framework that adopts a unique "**Answer First-Judge-Tool Calling-END() Termination**" mechanism. Unlike traditional approaches that call tools before answering, EchoAgent lets the main model first directly answer user questions based on existing knowledge, then uses a decision model to determine whether tools need to be called for further processing.
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Usage Examples](#usage-examples)
+- [Tool Development](#tool-development)
+- [API Reference](#api-reference)
+- [Advanced Features](#advanced-features)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
 
-### 🌟 Core Features
+## 🚀 Installation
 
-- **🔄 Dual Model Collaboration**: Main model handles answers, decision model handles tool calling judgments
-- **⚡ Rapid Response**: Provides direct answers first, then processes deeply as needed
-- **🛡️ Safe Execution**: Built-in code executor with secure Python code execution
-- **🔧 Tool Ecosystem**: Rich toolset supporting document processing, data analysis, web search, and enhanced ArXiv paper retrieval with batch processing and resume functionality
-- **📊 Persistent Context**: Cross-conversation variable persistence, supporting continuous data analysis tasks
-- **🔄 Context Separation**: Smart separation between agent conversation context and code execution context, preventing variable pollution while maintaining code persistence
-- **🎯 Intelligent Termination**: Smart task completion judgment through `END()` signals
-- **🖼️ Headless Plotting**: CodeRunner enforces Matplotlib Agg backend to avoid Tkinter thread errors; prefer `plt.savefig(...)` over `plt.show()` in headless runs
-
-### 🏗️ Architecture Design
-
-```mermaid
-graph TD
-    A["User Question"] --> B["Main Model Direct Answer"]
-    B --> C["Decision Model Judgment"]
-    C --> D{"Need Tools?"}
-    D -->|"Yes"| E["Call Tools"]
-    D -->|"No"| F["Output END()"]
-    E --> G["Tool Execution Results"]
-    G --> H["Update Context"]
-    H --> I["Main Model Analyze Results"]
-    I --> C
-    F --> J["Task Complete"]
-```
-
-#### Core Components
-
-- **AgentConfig**: Configuration management, supporting multi-user, multi-model
-- **AgentStateManager**: State management, handling conversation history and file storage
-- **AgentToolManager**: Tool management, unified registration and calling of local/remote tools
-- **LLMManager**: LLM management, supporting various LLM providers
-- **CodeExecutor**: Safe code executor with persistent context support
-
-### 🚀 Quick Start
-
-#### Requirements
+### Prerequisites
 
 - Python 3.8+
-- Supported LLM provider API keys (Doubao, OpenAI, Claude, etc.)
+- pip or conda package manager
 
-#### Installation Steps
+### Install Dependencies
 
-1. **Clone Repository**
 ```bash
-git clone https://github.com/JNUZXF/EchoAgent.git
-cd EchoAgent
+# Clone the repository
+git clone https://github.com/yourusername/my_agent_frame.git
+cd my_agent_frame
+
+# Install required packages
+pip install -r requirements.txt
 ```
 
-2. **Create and Activate Virtual Environment**
-```bash
-# Windows (PowerShell)
-python -m venv venv
-./venv/Scripts/Activate.ps1
+### Environment Setup
 
-# macOS/Linux (bash)
-python3 -m venv venv
-source venv/bin/activate
+Create a `.env` file in the project root:
+
+```bash
+# Copy the example configuration
+cp config.env.example .env
+
+# Edit the configuration file
+# Add your API keys and model configurations
 ```
 
-3. **Install Dependencies**
-```bash
-pip install -r requirements.txt  # Need to create this file
+Example `.env` configuration:
+
+```env
+# Basic Configuration
+AGENT_USER_ID=your_user_id
+AGENT_NAME=my_agent
+MAIN_MODEL=openai/gpt-4o-2024-11-20
+TOOL_MODEL=openai/gpt-4o-mini
+FLASH_MODEL=openai/gpt-4o-mini
+
+# API Keys (add the ones you need)
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GOOGLE_API_KEY=your_google_key
+
+# Optional: MCP Tools
+ENABLE_MCP=true
+MCP_CONFIG_PATH=server_config.json
+
+# Optional: Advanced Settings
+MAX_HISTORY=100
+MAX_TOKENS=8000
+LOG_LEVEL=INFO
 ```
 
-4. **Configure Environment Variables**
-```bash
-# Copy environment template
-cp .env.example .env
+## 🎯 Quick Start
 
-# Edit .env file, add your API keys
-DOUBAO_API_KEY=your_doubao_api_key
-OPENAI_API_KEY=your_openai_api_key
-# More configurations...
-```
-
-5. **Run Example**
-```bash
-python agent_frame.py
-```
-
-While running, the CLI supports quick commands:
-
-- `/reset`: Delete current session directory and recreate a fresh one (new session_id)
-- `/reset keep`: Delete current session directory but keep the same session_id
-
-#### Basic Usage
+### Basic Usage
 
 ```python
-from agent_frame import EchoAgent, AgentConfig
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
 
-# Create configuration
-config = AgentConfig(
-    user_id="demo_user",
-    main_model="doubao-pro",
-    tool_model="doubao-pro", 
-    flash_model="doubao-pro"
+async def main():
+    # Create configuration
+    config = create_agent_config(
+        user_id="demo_user",
+        main_model="openai/gpt-4o-2024-11-20",
+        tool_model="openai/gpt-4o-mini", 
+        flash_model="openai/gpt-4o-mini",
+        agent_name="my_assistant"
+    )
+    
+    # Initialize agent
+    agent = EchoAgent(config)
+    
+    # Interactive chat loop
+    await agent.chat_loop_common(version="v2")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Command Line Interface
+
+```bash
+# Run the agent with default configuration
+python agent_frame.py
+
+# Or use specific models
+MAIN_MODEL="anthropic/claude-sonnet-4" python agent_frame.py
+```
+
+## ⚙️ Configuration
+
+### Configuration Methods
+
+1. **Environment Variables** (Recommended for production)
+2. **`.env` File** (Good for development)
+3. **Programmatic Configuration** (For embedded usage)
+
+### Key Configuration Options
+
+| Parameter | Description | Default | Example |
+|-----------|-------------|---------|---------|
+| `user_id` | Unique user identifier | Required | `"john_doe"` |
+| `main_model` | Primary conversation model | `"doubao-seed-1-6-250615"` | `"openai/gpt-4o"` |
+| `tool_model` | Tool intention recognition model | `"doubao-pro"` | `"openai/gpt-4o-mini"` |
+| `flash_model` | Quick response model | `"doubao-pro"` | `"openai/gpt-4o-mini"` |
+| `max_conversation_history` | Max conversation turns to keep | `100` | `50` |
+| `enable_mcp` | Enable MCP tool integration | `true` | `false` |
+| `log_level` | Logging verbosity | `"INFO"` | `"DEBUG"` |
+
+### Model Configuration Examples
+
+```python
+# OpenAI Configuration
+config = create_agent_config(
+    user_id="user",
+    main_model="openai/gpt-4o-2024-11-20",
+    tool_model="openai/gpt-4o-mini",
+    flash_model="openai/gpt-4o-mini"
 )
 
-# Initialize agent
-agent = EchoAgent(config)
+# Anthropic Configuration  
+config = create_agent_config(
+    user_id="user",
+    main_model="anthropic/claude-sonnet-4",
+    tool_model="anthropic/claude-haiku-3",
+    flash_model="anthropic/claude-haiku-3"
+)
 
-# Start conversation
-await agent.chat_loop()
+# Mixed Provider Configuration
+config = create_agent_config(
+    user_id="user", 
+    main_model="anthropic/claude-sonnet-4",
+    tool_model="openai/gpt-4o-mini",
+    flash_model="google/gemini-2.5-flash"
+)
 ```
 
-### 📚 Usage Guide
+## 📚 Usage Examples
 
-#### Tool System (Pydantic + @tool)
-#### 🔁 Reset Chat (Clear Conversation and Session Directory)
-
-A new method `EchoAgent.reset_chat(preserve_session_id: bool = False)` resets the agent back to a fresh state:
-
-- Deletes the current session directory including `conversations/`, `logs/`, `artifacts/`, etc.
-- Releases log handles first to avoid Windows file lock issues when removing logs.
-- Clears in-memory conversations, display/full contexts, tool contexts, and TeamContext.
-- Recreates a clean session and loggers. By default a new `session_id` is generated; pass `preserve_session_id=True` to keep the same ID.
-
-Example:
+### Example 1: Data Analysis Agent
 
 ```python
-agent.reset_chat()        # Delete session dir and create a new session_id
-agent.reset_chat(True)    # Delete session dir but keep the same session_id
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
+
+async def data_analysis_example():
+    config = create_agent_config(
+        user_id="analyst",
+        agent_name="data_analyst",
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="openai/gpt-4o-mini",
+        user_system_prompt="You are a data analysis expert. Always show visualizations for data insights."
+    )
+    
+    agent = EchoAgent(config)
+    
+    # Process a query with streaming response
+    query = "Create synthetic stock data for AAPL and MSFT, then analyze their correlation and create visualizations"
+    
+    async for response_chunk in agent.process_query(query, version="v2"):
+        print(response_chunk, end="", flush=True)
+
+asyncio.run(data_analysis_example())
 ```
 
-From the CLI:
-
-```text
-/reset         # equals to agent.reset_chat()
-/reset keep    # equals to agent.reset_chat(True)
-```
-
-Typical use cases:
-
-- Start over with a completely clean conversation and artifacts
-- Resolve Windows log file locks preventing session folder deletion
-- Quickly reproduce issues from a clean environment
-
-
-We upgraded the tool system to use Pydantic-based schemas and a unified ToolRegistry. Define your tool as a function decorated with `@tool` and a Pydantic parameter model; the framework auto-generates JSON Schemas and executes tools with validated arguments.
-
-Quick example:
+### Example 2: Research Agent with Custom Tools
 
 ```python
 from pydantic import BaseModel, Field
 from tools_agent.toolkit import tool
+from agent_frame import EchoAgent, create_agent_config
 
-class MyToolArgs(BaseModel):
-    question: str = Field(..., description="User question with context")
+# Define custom tool
+class SearchArgs(BaseModel):
+    query: str = Field(..., description="Search query")
+    max_results: int = Field(10, description="Maximum results")
 
 @tool
-def my_tool(args: MyToolArgs):
-    return {"echo": args.question}
+def search_papers(args: SearchArgs):
+    """Search academic papers and return summaries"""
+    # Your search implementation here
+    return {"papers": f"Found papers related to: {args.query}"}
+
+async def research_agent_example():
+    config = create_agent_config(
+        user_id="researcher",
+        agent_name="research_assistant", 
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="google/gemini-2.5-flash",
+        user_system_prompt="You are a research assistant specializing in academic literature review."
+    )
+    
+    agent = EchoAgent(config)
+    
+    # Register custom tool
+    agent.tool_manager.register_tool_function(search_papers)
+    
+    # Use the agent
+    query = "Find recent papers on LLM agents and summarize key innovations"
+    async for response in agent.process_query(query, version="v2"):
+        print(response, end="", flush=True)
+
+asyncio.run(research_agent_example())
 ```
 
-Register it in `agent_frame.py` inside `_register_local_tools`:
+### Example 3: Team Context Sharing
 
 ```python
-from tools_agent.my_tools import my_tool
-self.tool_manager.register_tool_function(my_tool)
+import asyncio
+from agent_frame import EchoAgent, create_agent_config
+
+async def team_context_example():
+    # Create two agents with shared context
+    config1 = create_agent_config(
+        user_id="team_user",
+        agent_name="agent_1",
+        main_model="openai/gpt-4o",
+        tool_model="openai/gpt-4o-mini",
+        flash_model="openai/gpt-4o-mini"
+    )
+    
+    config2 = create_agent_config(
+        user_id="team_user", 
+        agent_name="agent_2",
+        main_model="anthropic/claude-sonnet-4",
+        tool_model="openai/gpt-4o-mini", 
+        flash_model="openai/gpt-4o-mini"
+    )
+    
+    agent1 = EchoAgent(config1)
+    agent2 = EchoAgent(config2)
+    
+    # Set shared context path
+    shared_context_path = "shared_team_context.json"
+    agent1.set_team_context_override_path(shared_context_path)
+    agent2.set_team_context_override_path(shared_context_path)
+    
+    # Agent 1 sets team goal
+    agent1.set_team_goal("Develop a web application with React frontend and Python backend")
+    
+    # Agent 2 can access the shared context
+    team_context = agent2.get_team_context()
+    print(f"Shared team goal: {team_context.get('team_goal', 'None')}")
+
+asyncio.run(team_context_example())
 ```
 
-The schema will be included automatically in prompts; execution is routed via `ToolRegistry` with strict validation.
+## 🔧 Tool Development
 
-#### Code Execution Context Management
+### Creating Custom Tools
 
-The framework provides intelligent separation between agent conversation context and code execution persistence:
-
-**Built-in Code Tools:**
-- **CodeRunner**: Execute Python code with persistent variable context
-- **ViewCodeContext**: Inspect current persistent variables
-- **ResetCodeContext**: Clear code execution context when needed
-
-**Session-based Persistence (CodeExecutor):**
-```python
-from utils.code_runner import execute_code, quick_run, reset_session_context
-
-# Use a stable session_id to persist variables across multiple executions
-session_id = "demo-session-001"
-
-# 1) First run: define variables
-execute_code("""
-import pandas as pd
-df = pd.DataFrame({'A':[1,2,3]})
-x = 10
-""", session_id=session_id)
-
-# 2) Second run: reuse variables df and x
-res = execute_code("""
-df['B'] = df['A'] + x
-print(df)
-df.shape
-""", session_id=session_id)
-print(res['result'])  # -> (3, 2)
-
-# 3) Reset when starting fresh
-reset_session_context(session_id)
-```
-
-Notes:
-- When `session_id` is provided, a per-session `CodeExecutor` is reused with persistence enabled by default.
-- When omitted, `execute_code` behaves as before: each call uses a new isolated executor (no persistence).
-
-**Key Benefits:**
-- **Clean Conversations**: Agent conversations show execution summaries, not detailed variable dumps
-- **Code Persistence**: Variables persist across multiple code executions for iterative development
-- **Context Control**: Users can inspect and reset code context as needed
-
-**Example Usage:**
-```python
-# First execution - creates variables
-CodeRunner({"code": "import pandas as pd\ndf = pd.DataFrame({'A': [1,2,3]})"})
-# Returns: {'success': True, 'result_summary': 'DataFrame (shape: (3, 1))', 'persistent_variables_count': 2}
-
-# Second execution - uses previous variables  
-CodeRunner({"code": "df['B'] = [4,5,6]\nprint(df)"})
-# Variables 'pd' and 'df' are still available from previous execution
-
-# Check what variables are available
-ViewCodeContext({"show_details": True})
-# Returns: {'variables': {'pd': 'module', 'df': {'type': 'DataFrame', 'info': 'shape: (3, 2)'}}}
-
-# Reset when starting fresh
-ResetCodeContext({"confirm": True})
-# Clears all persistent variables
-```
-
-### ✅ Architecture Slimming & Pydantic Integration (2025-09-10)
-
-- Added `ToolEventModel`, `IntentionResultModel`, and `TeamContextModel` (Pydantic) to standardize validation/serialization
-- Unified `_create_tool_event` and kept the legacy `[[TOOL_EVENT]]` envelope unchanged for frontend compatibility
-- TeamContext read/write now validated and merged via model; gracefully falls back to dict if validation fails
-
-See details in `docs/工具集成优化.md`.
-
-### 🔄 Recent Fixes (2025-09-10)
-
-- Windows 原子写覆盖修复：`core/safe_state_manager.py` 与 `core/cache_manager.py` 将临时文件落盘后的 `rename` 改为 `replace`，避免 `WinError 183`。
-- 聊天主流程进入修复：`agent_frame_v6_optimized.py` 在 `process_query` 开始执行 `_agent_reset()` 注入系统提示后再加入用户问题，确保主模型上下文完整；修正意图占位符并增强解析鲁棒性。
-- 文档新增：详见 `docs/v6优化修复说明与使用指南.md` 获取详细说明与使用建议。
-- CodeRunner stale code fix: `agent_frame_v5.py` now updates the latest assistant message after each tool+analysis cycle and extracts code for the next `CodeRunner` run from that message. This prevents repeating old errors even after code has been corrected. See `docs/CodeRunner重复错误修复说明.md`.
-
-### 📚 Enhanced ArXiv Paper Retrieval
-
-The framework includes a robust ArXiv paper retrieval system with the following improvements:
-
-#### Key Features
-- **🔄 Batch Processing**: Handles large-scale searches (1000+ papers) by splitting into manageable batches
-- **💾 Resume Functionality**: Automatic progress saving and resume capability for interrupted searches
-- **🛡️ Error Handling**: Enhanced retry mechanisms and API limit management
-- **📊 Detailed Logging**: Comprehensive logging with file output for debugging
-- **🎯 Multi-field Search**: Support for title, author, abstract, and category-based searches
-
-#### Usage Example
-```python
-from agent_cases.research_agent.arxiv_search import ArxivSearcher, SearchField
-
-# Initialize with batch processing
-searcher = ArxivSearcher(
-    download_dir="./arxiv_papers", 
-    max_workers=3,
-    batch_size=500  # Process 500 papers per batch
-)
-
-# Large-scale search with resume capability
-papers, stats = searcher.search_and_download(
-    query="agent",
-    search_field=SearchField.TITLE,
-    search_num=3000,  # Can handle thousands of papers
-    sort_by=arxiv.SortCriterion.LastUpdatedDate,
-    download=False  # Search first, download later
-)
-
-# Resume interrupted search
-if searcher.progress_file.exists():
-    papers = searcher.resume_search()
-```
-
-#### Improvements Made
-- **API Limit Management**: Increased delays and smaller batch sizes to avoid ArXiv API restrictions
-- **Progress Persistence**: Automatic saving of search progress with JSON-based recovery
-- **Enhanced Error Recovery**: Multiple retry strategies for different types of failures
-- **Intelligent Batching**: Adaptive batch sizing based on API responses
-
-### Extending Development
-
-#### Adding Custom Tools
-
-1. **Create Tool Class**
-```python
-class MyTool:
-    def execute(self, **kwargs):
-        # Tool logic
-        return result
-```
-
-2. **Register Tool**
-```python
-agent.tool_manager.register_local_tool(
-    "my_tool", 
-    MyTool(), 
-    tool_config_for_prompt
-)
-```
-
-3. **Update Tool Configuration**
-Add tool description in `tools_configs.py`.
-
-### 🔧 Configuration
-
-#### Model Configuration
-
-Supports multiple LLM providers:
+The framework uses a decorator-based approach for tool registration:
 
 ```python
-# Doubao Series
-"doubao-pro", "doubao-1.5-lite", "doubao-1.5-pro-256k"
+from pydantic import BaseModel, Field
+from tools_agent.toolkit import tool
+from typing import Optional
 
-# OpenAI Series  
-"gpt-4o", "gpt-4o-mini"
+# Define the tool's input schema
+class WebScrapingArgs(BaseModel):
+    url: str = Field(..., description="URL to scrape")
+    selector: Optional[str] = Field(None, description="CSS selector for specific content")
+    max_length: int = Field(5000, description="Maximum content length")
 
-# Claude Series
-"anthropic/claude-3.5-sonnet"
+@tool
+def web_scraper(args: WebScrapingArgs):
+    """
+    Scrape content from a web page
+    
+    This tool fetches and extracts content from web pages.
+    
+    Example usage:
+    {"tools": ["web_scraper(url='https://example.com', selector='article', max_length=3000)"]}
+    """
+    import requests
+    from bs4 import BeautifulSoup
+    
+    try:
+        response = requests.get(args.url, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        if args.selector:
+            content = soup.select_one(args.selector)
+            text = content.get_text(strip=True) if content else ""
+        else:
+            text = soup.get_text(strip=True)
+        
+        # Truncate if too long
+        if len(text) > args.max_length:
+            text = text[:args.max_length] + "..."
+        
+        return {
+            "content": text,
+            "url": args.url,
+            "length": len(text)
+        }
+        
+    except Exception as e:
+        return {"error": f"Failed to scrape {args.url}: {str(e)}"}
 
-# Open Source Models
-"opensource/llama-3.1-8b"
+# Register the tool
+agent.tool_manager.register_tool_function(web_scraper)
 ```
 
-#### Security Configuration
+### Tool Best Practices
 
-CodeExecutor supports three security levels:
-- `strict`: Only allows basic standard libraries
-- `medium`: Allows common scientific computing libraries (default)
-- `permissive`: Allows most libraries, only prohibits dangerous operations
+1. **Clear Input Schema**: Use Pydantic models with descriptive fields
+2. **Comprehensive Docstrings**: Include purpose, parameters, and examples
+3. **Error Handling**: Always handle exceptions gracefully
+4. **Return Structured Data**: Use dictionaries with consistent keys
+5. **Performance Considerations**: Set timeouts and limits
 
-### 📁 Project Structure
+### MCP Tool Integration
 
-```
-EchoAgent/
-├── agent_frame_v6.py      # Main agent workflow (entry for v6)
-├── agent_core/            # Core modularized components
-│   ├── __init__.py        # Re-exports common classes
-│   ├── models.py          # ToolEventModel, IntentionResultModel, TeamContextModel
-│   ├── state_manager.py   # AgentStateManager
-│   ├── tools.py           # LocalToolManager, AgentToolManager
-│   └── prompts.py         # AgentPromptManager
-├── config/                # Config management
-│   ├── __init__.py        # exports AgentSettings, create_agent_config
-│   └── agent_config.py
-├── prompts/               # Prompt templates
-│   └── agent_prompts.py
-├── tools_agent/           # Tool implementations & registry
-│   ├── llm_manager.py     # LLM management
-│   └── ...
-├── utils/                 # Utilities (code runner, file manager, etc.)
-│   ├── code_runner.py
-│   └── ...
-├── docs/                  # Guides and architecture notes
-├── files/                 # User/session data storage
-├── workspaces/            # Multi-project/team isolation (optional)
-└── requirements.txt
+For Model Context Protocol tools, create a `server_config.json`:
+
+```json
+{
+  "research_server": {
+    "command": "python",
+    "args": ["research_server.py"],
+    "env": {
+      "PYTHONPATH": "."
+    }
+  },
+  "file_server": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"]
+  }
+}
 ```
 
-### 📁 File & Session Management
+## 📖 API Reference
 
-EchoAgent automatically creates a session-scoped directory on each agent start, organizing all artifacts and logs in a structured, production-ready way.
+### EchoAgent Class
 
-- Root directory: `files/` by default, configurable via `AGENT_FILES_ROOT`
-- Layout per session: `files/{user_id}/{agent_name}/{session_id}/`
-- Subfolders: `logs/`, `conversations/`, `artifacts/`, `uploads/`, `outputs/`, `temp/`
-  and `images/`
-- Convenience pointer: `files/{user_id}/{agent_name}/latest.json` stores latest `session_id`
-
-See detailed guide: [docs/FileManagement.md](docs/FileManagement.md)
-
-Tip: To isolate multi-project work or enable team spaces, pass `workspace` when constructing `AgentConfig`. When set, all sessions and artifacts are stored under `workspaces/{user}/{workspace}/{agent}` instead of `files/...`. Details: [Workspace mode](docs/FileManagement.md#workspace-工作空间模式多项目多团队隔离)
-
-### 🧩 Modular Core (2025-09-10)
-
-- Introduced `agent_core/` package and moved core classes out of `agent_frame_v6.py`:
-  - `models.py`: ToolEventModel, IntentionResultModel, TeamContextModel
-  - `state_manager.py`: AgentStateManager
-  - `tools.py`: LocalToolManager, AgentToolManager
-  - `prompts.py`: AgentPromptManager
-- Backward compatibility kept: tool event envelope `[[TOOL_EVENT]]{...}` unchanged.
-- How to import now:
+#### Initialization
 ```python
-from agent_core import (
-  AgentStateManager, AgentToolManager, AgentPromptManager,
-  ToolEventModel, IntentionResultModel, TeamContextModel,
-)
+agent = EchoAgent(config: AgentSettings)
 ```
 
-See: `docs/Agent模块化重构.md`.
+#### Core Methods
+- `process_query(question: str, version: str) -> AsyncGenerator[str, None]`
+  - Process user query with streaming response
+- `chat_loop_common(version: str) -> None`
+  - Start interactive CLI chat session
+- `reset_chat(preserve_session_id: bool = False) -> None`
+  - Reset conversation state
 
-### 🧾 Production-grade Logging
+#### Team Context Management
+- `set_team_context_override_path(path: str) -> None`
+  - Set shared context file path
+- `update_team_context(patch: Dict[str, Any]) -> None`
+  - Update team context
+- `get_team_context() -> Dict[str, Any]`
+  - Get current team context
 
-EchoAgent persists rich, structured logs per session under `files/{user_id}/{agent_name}/{session_id}/logs/`:
+### Configuration Factory
 
-- `agent.log`: Rotating rich text logs (INFO+ console, DEBUG+ file)
-- `error.log`: Rotating error-only logs for quick incident triage
-- `events.jsonl`: Structured JSON logs, one event per line, suitable for downstream analysis
-
-Each log record includes contextual fields: `user_id`, `agent_name`, `session_id`. Key lifecycle events are captured: session init, user questions, LLM streaming phases, tool start/end, errors, and completion timing. Conversation records are stored under `conversations/` as `conversations.json`, `display_conversations.md`, `full_context_conversations.md`, and `tool_conversations.json`.
-
-Environment variables to tune behavior:
-
-```bash
-# Logging location follows AGENT_FILES_ROOT; defaults to project_root/files
-AGENT_LOG_MAX_BYTES=5242880      # per file max size, default 5MB
-AGENT_LOG_BACKUP=5               # rotated file count, default 5
-AGENT_LOG_CONSOLE_LEVEL=INFO     # console level, default INFO
-AGENT_LOG_FILE_LEVEL=DEBUG       # file level, default DEBUG
+```python
+config = create_agent_config(
+    user_id: str,
+    main_model: str,
+    tool_model: str,
+    flash_model: str,
+    agent_name: str = "echo_agent",
+    conversation_id: Optional[str] = None,
+    workspace: Optional[str] = None,
+    user_system_prompt: Optional[str] = None,
+    use_new_config: bool = True,
+    enable_mcp: bool = True,
+    **kwargs
+) -> AgentSettings
 ```
 
-Example path:
+## 🚀 Advanced Features
+
+### Custom Tool Execution Context
+
+```python
+# Custom tool with context access
+@tool
+def context_aware_tool(args: MyArgs):
+    """Tool that accesses conversation context"""
+    # Access current session information
+    session_info = get_current_session()
+    return {"result": "Processed with context awareness"}
+```
+
+### Async Tool Support
+
+```python
+from tools_agent.toolkit import tool
+
+@tool
+async def async_api_call(args: APIArgs):
+    """Asynchronous tool for API calls"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(args.url) as response:
+            return await response.json()
+```
+
+### Multi-Agent Coordination
+
+```python
+async def multi_agent_workflow():
+    # Create specialized agents
+    researcher = EchoAgent(research_config)
+    analyst = EchoAgent(analysis_config)
+    writer = EchoAgent(writing_config)
+    
+    # Set shared context
+    shared_path = "project_context.json"
+    for agent in [researcher, analyst, writer]:
+        agent.set_team_context_override_path(shared_path)
+    
+    # Research phase
+    research_query = "Research latest trends in AI"
+    research_result = await researcher.process_query(research_query, "v2")
+    
+    # Analysis phase  
+    analysis_query = "Analyze the research findings"
+    analysis_result = await analyst.process_query(analysis_query, "v2")
+    
+    # Writing phase
+    writing_query = "Create a comprehensive report"
+    final_report = await writer.process_query(writing_query, "v2")
+```
+
+## 🏗️ Project Structure
 
 ```
-files/ada/echo_agent/20250903-225827-432428/logs/
-├── agent.log
-├── agent.log.1
-├── error.log
-└── events.jsonl
+my_agent_frame/
+├── agent_core/                 # Core framework modules
+│   ├── __init__.py            # Module exports
+│   ├── mcp_manager.py         # MCP protocol integration
+│   ├── models.py              # Pydantic data models
+│   ├── prompts.py             # Prompt management
+│   ├── state_manager.py       # Conversation state management
+│   └── tools.py               # Tool management system
+├── config/                     # Configuration management
+│   ├── __init__.py
+│   └── agent_config.py        # Pydantic-based configuration
+├── tools_agent/               # Tool system implementation
+│   ├── builtin_tools.py       # Built-in tools (CodeRunner, etc.)
+│   ├── function_call_toolbox.py # Function parsing utilities
+│   ├── llm_manager.py         # Multi-provider LLM management
+│   ├── parse_function_call.py # Function call parsing
+│   └── toolkit.py             # Tool registration system
+├── utils/                     # Utility modules
+│   ├── conversation_store.py  # SQLite conversation storage
+│   ├── file_manager.py        # File system management
+│   └── code_runner.py         # Code execution utilities
+├── prompts/                   # Prompt templates
+│   └── agent_prompts.py       # System and tool prompts
+├── files/                     # Session storage directory
+├── workspaces/                # User workspace directories
+├── agent_frame.py             # Main framework entry point
+├── requirements.txt           # Python dependencies
+├── config.env.example         # Environment configuration template
+└── README.md                  # This documentation
 ```
 
 ## 🤝 Contributing
 
-We welcome all forms of contributions! Please check [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-### Ways to Contribute
-
-1. **Report Issues**: Use [Issue templates](.github/ISSUE_TEMPLATE/) to report bugs
-2. **Feature Suggestions**: Submit feature requests and improvement suggestions  
-3. **Code Contributions**: Fork the project, create branches, submit PRs
-4. **Documentation Improvements**: Improve documentation and examples
-
-### Development Environment Setup
+### Development Setup
 
 ```bash
+# Clone repository
+git clone https://github.com/yourusername/my_agent_frame.git
+cd my_agent_frame
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
 # Install development dependencies
-pip install -r requirements-dev.txt
+pip install black flake8 mypy pytest pytest-asyncio
 
 # Run tests
-python -m pytest tests/
+pytest tests/
 
-# Code formatting
-black agent_frame.py
+# Format code
+black .
+
+# Type checking
+mypy agent_core/ tools_agent/
 ```
 
-## 📋 TODO
+### Guidelines
 
-Check [ToDo.md](ToDo.md) for current optimization plans and claimable tasks.
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Q: Tool calling fails?**
-A: Check detailed logs in `files/{user_id}/{agent_name}/tool_conversations.json`.
-
-**Q: Code execution timeout?**
-A: Adjust the `timeout` parameter in `CodeExecutor`, or check code complexity.
-
-**Q: API call failures?**
-A: Confirm API key configuration in `.env` file is correct.
-
-**Q: Tkinter errors after running plotting code via CodeRunner?**
-A: CodeRunner runs in a background thread and enforces a headless backend (Agg). Do not call `plt.show()`. Save figures using `plt.savefig(...)`. More: `docs/CodeRunner图形后端修复说明.md`.
-
-### View Logs
-
-```bash
-# View complete conversation history
-cat files/{user_id}/{agent_name}/full_context_conversations.md
-
-# View tool execution logs
-cat files/{user_id}/{agent_name}/tool_conversations.json
-```
+- Follow PEP 8 style guidelines
+- Add type hints to all functions
+- Write comprehensive docstrings
+- Include unit tests for new features
+- Update documentation for API changes
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## 📞 Contact
 
-Thanks to the following projects and communities for their support:
-- [LangChain](https://github.com/langchain-ai/langchain) - Inspired tool chain design
-- [OpenAI](https://openai.com/) - API support
-- [ByteDance](https://www.volcengine.com/) - Doubao model support
+### Developer
 
-## 📞 Contact Us
+**Your Name**  
+📧 Email: your.email@example.com  
+🐙 GitHub: [@yourusername](https://github.com/yourusername)  
 
-- Submit Issues: [GitHub Issues](https://github.com/JNUZXF/EchoAgent/issues)
-- Email: [Please add your email]
-- WeChat: ![WeChat QR Code](images/wechatID.jpg)
+### WeChat
+
+For Chinese users, scan the QR code to add on WeChat:
+
+![WeChat QR Code](images/wechatID.jpg)
+
+### Support
+
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/my_agent_frame/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/my_agent_frame/discussions)
+- 📖 **Documentation**: [Wiki](https://github.com/yourusername/my_agent_frame/wiki)
 
 ---
 
-<div align="center">
+**Built with ❤️ by the EchoAgent Team**
 
-**⭐ If this project helps you, please give us a star!**
-
-[⬆ Back to Top](#echoagent---agent-framework)
-
-</div>
-
-## Changelog
-
-- 2025-09-12: Refactor agent_frame.py
-  - Deduplicated intention detection via `_get_tool_intention_common(v1/v2)`
-  - Unified tool loop via `_execute_tool_loop_common` while preserving v1/v2 stop semantics
-  - Extracted `_stream_main_answer` for reusable streaming answer
-  - Merged CLI loops into `_chat_loop_common` with v1/v2 wrappers
-  - Removed unused imports and fixed module header path
-  - No behavior change for existing public methods; v1/v2 both preserved
+*Making AI agents more accessible, extensible, and powerful for everyone.*

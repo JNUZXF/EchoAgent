@@ -74,6 +74,16 @@ class AgentSettings(BaseSettings):
     enable_file_logging: bool = Field(True, env='ENABLE_FILE_LOGGING', description="是否启用文件日志")
     log_rotation_size: str = Field('10MB', env='LOG_ROTATION_SIZE', description="日志文件轮转大小")
     
+    # ========== 存储配置（可选启用SQLite镜像） ==========
+    storage_backend: str = Field('filesystem', env='STORAGE_BACKEND', description="存储后端：filesystem 或 sqlite")
+    db_path: Optional[str] = Field(None, env='DB_PATH', description="SQLite数据库文件路径；未设置时使用默认路径")
+    
+    # ========== MCP配置 ==========
+    enable_mcp: bool = Field(True, env='ENABLE_MCP', description="是否启用MCP工具集成")
+    mcp_config_path: Optional[str] = Field(None, env='MCP_CONFIG_PATH', description="MCP配置文件路径；未设置时使用默认路径")
+    mcp_connection_timeout: float = Field(10.0, env='MCP_CONNECTION_TIMEOUT', description="MCP连接超时时间(秒)")
+    mcp_startup_delay: float = Field(0.5, env='MCP_STARTUP_DELAY', description="MCP启动延迟时间(秒)，避免并发冲突")
+    
     # ========== 路径配置（运行时计算） ==========
     agent_dir: Optional[Path] = None
     user_folder: Optional[Path] = None
@@ -127,6 +137,26 @@ class AgentSettings(BaseSettings):
             raise ValueError(f"log_level必须是{valid_levels}中的一个")
         return v_upper
     
+    @field_validator('mcp_connection_timeout')
+    @classmethod
+    def validate_mcp_timeout(cls, v: float) -> float:
+        """验证MCP连接超时设置"""
+        if v <= 0:
+            raise ValueError("mcp_connection_timeout必须大于0")
+        if v > 60:  # 1分钟
+            logger.warning("mcp_connection_timeout设置过长(%s秒)，建议不超过60秒", v)
+        return v
+    
+    @field_validator('mcp_startup_delay')
+    @classmethod
+    def validate_mcp_delay(cls, v: float) -> float:
+        """验证MCP启动延迟设置"""
+        if v < 0:
+            raise ValueError("mcp_startup_delay不能为负数")
+        if v > 10:  # 10秒
+            logger.warning("mcp_startup_delay设置过长(%s秒)，建议不超过10秒", v)
+        return v
+    
     @model_validator(mode='before')
     @classmethod
     def validate_models(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -169,8 +199,17 @@ class AgentSettings(BaseSettings):
                 self.agent_dir / "files" / self.user_id / self.agent_name
             )
         
-        # 服务器配置文件路径
-        self.server_config_path = self.agent_dir / "server_config.json"
+        # MCP服务器配置文件路径
+        if self.mcp_config_path:
+            self.server_config_path = Path(self.mcp_config_path)
+        else:
+            # 默认查找位置
+            self.server_config_path = self.agent_dir / "server_config.json"
+        
+        # 默认SQLite数据库路径（当启用 sqlite 时生效；可被 env DB_PATH 覆盖）
+        if getattr(self, "storage_backend", "filesystem").lower() == "sqlite" and not getattr(self, "db_path", None):
+            # 存放在项目 files 根下，文件名 conversations.db
+            self.db_path = str(self.agent_dir / "files" / "conversations.db")
     
     def _ensure_directories(self) -> None:
         """【测试策略】确保必要的目录存在"""
@@ -209,6 +248,15 @@ class AgentSettings(BaseSettings):
             "tool_execution_timeout": self.tool_execution_timeout,
             "max_retry_attempts": self.max_retry_attempts,
             "retry_backoff_factor": self.retry_backoff_factor
+        }
+    
+    def get_mcp_config(self) -> Dict[str, Any]:
+        """【单一职责原则】获取MCP配置"""
+        return {
+            "enable_mcp": self.enable_mcp,
+            "mcp_config_path": str(self.server_config_path) if self.server_config_path else None,
+            "mcp_connection_timeout": self.mcp_connection_timeout,
+            "mcp_startup_delay": self.mcp_startup_delay
         }
     
     def to_legacy_config(self) -> 'LegacyAgentConfig':
@@ -278,6 +326,16 @@ class LegacyAgentConfig:
             
         self.server_config_path = self.agent_dir / "server_config.json"
         
+        # 兼容存储配置（若新版失败回退时依然可读取）
+        self.storage_backend = kwargs.get('storage_backend', 'filesystem')
+        self.db_path = kwargs.get('db_path') or (str(self.agent_dir / "files" / "conversations.db") if self.storage_backend == 'sqlite' else None)
+        
+        # MCP配置
+        self.enable_mcp = kwargs.get('enable_mcp', True)
+        self.mcp_config_path = kwargs.get('mcp_config_path')
+        self.mcp_connection_timeout = kwargs.get('mcp_connection_timeout', 10.0)
+        self.mcp_startup_delay = kwargs.get('mcp_startup_delay', 0.5)
+        
         # 确保目录存在
         self.user_folder.mkdir(parents=True, exist_ok=True)
         
@@ -296,6 +354,8 @@ def create_agent_config(
     user_system_prompt: Optional[str] = None,
     use_new_config: bool = True,
     code_runner_session_id: Optional[str] = None,
+    enable_mcp: bool = True,
+    mcp_config_path: Optional[str] = None,
     **kwargs: Any
 ) -> Union[AgentSettings, LegacyAgentConfig]:
     """
@@ -337,6 +397,8 @@ def create_agent_config(
         user_system_prompt: 用户系统提示词
         use_new_config: 是否使用新版配置（默认True）
         code_runner_session_id: 代码执行器会话ID
+        enable_mcp: 是否启用MCP工具集成（默认True）
+        mcp_config_path: MCP配置文件路径
         **kwargs: 其他配置参数
         
     Returns:
@@ -352,6 +414,8 @@ def create_agent_config(
         "workspace": workspace,
         "user_system_prompt": user_system_prompt,
         "code_runner_session_id": code_runner_session_id,
+        "enable_mcp": enable_mcp,
+        "mcp_config_path": mcp_config_path,
         **kwargs
     }
     

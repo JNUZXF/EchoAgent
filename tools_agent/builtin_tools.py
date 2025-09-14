@@ -33,10 +33,7 @@ class CodeRunnerArgs(BaseModel):
 def CodeRunner(args: CodeRunnerArgs):
     """
     执行 Python 代码。
-    示例用法：
-    Assistant：接下来要运行代码
-    你的输出：
-    {{"tools": ["CodeRunner(code="")"]}}
+    你写完代码后会直接执行。
     """
     # 【持久化上下文】使用全局实例确保跨调用持久化
     result = execute_code(code=args.code or "", session_id=args.session_id)

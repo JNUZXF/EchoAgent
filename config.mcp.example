@@ -1,0 +1,33 @@
+# EchoAgent MCP配置示例
+# 复制此文件为 .env 并根据需要修改配置
+
+# ========== 基础配置 ==========
+AGENT_USER_ID=ada
+AGENT_NAME=test_agent_v6
+
+# ========== 模型配置 ==========
+MAIN_MODEL=doubao-seed-1-6-250615
+TOOL_MODEL=qwen/qwen3-next-80b-a3b-instruct
+FLASH_MODEL=doubao-pro
+
+# ========== MCP配置 ==========
+# 是否启用MCP工具集成（true/false）
+ENABLE_MCP=true
+
+# MCP配置文件路径（可选，默认使用 server_config.json）
+# MCP_CONFIG_PATH=custom_server_config.json
+
+# MCP连接超时时间（秒）
+MCP_CONNECTION_TIMEOUT=10.0
+
+# MCP启动延迟时间（秒），避免并发冲突
+MCP_STARTUP_DELAY=0.5
+
+# ========== 性能配置 ==========
+MAX_HISTORY=100
+MAX_TOKENS=8000
+TOOL_TIMEOUT=30.0
+
+# ========== 日志配置 ==========
+LOG_LEVEL=INFO
+ENABLE_FILE_LOGGING=true

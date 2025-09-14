@@ -28,11 +28,13 @@ class AgentPromptManager:
 
     def get_system_prompt(self, **kwargs: Any) -> str:
         user_system_prompt = kwargs.get("user_system_prompt", "")
+        tool_docs = kwargs.get("tool_docs", "")
         try:
             return AGENT_SYSTEM_PROMPT.format(
                 AGENT_TOOLS_GUIDE=AGENT_TOOLS_GUIDE,
                 FRAMEWORK_RUNNING_CHARACTER=FRAMEWORK_RUNNING_CHARACTER,
                 user_system_prompt=user_system_prompt,
+                TOOL_DOCS=tool_docs,
             )
         except KeyError as e:
             logging.getLogger("agent.prompt").error(f"系统提示词格式化失败: {e}")
