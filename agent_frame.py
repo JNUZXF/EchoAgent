@@ -1,6 +1,6 @@
 """
 智能体主框架
-文件路径: AGENT_DEV/agent_frame_modifying.py
+文件路径: AGENT_DEV/agent_frame.py
 功能: 根据用户的需求，自主调用工具（1轮/多轮）/直接回答问题
 
 这个模块实现了一个完整的智能体框架，包括：
@@ -10,9 +10,9 @@
 - 提示词管理：AgentPromptManager
 - 核心框架：EchoAgent
 
-Author: Your Name
+Author: Xinfu Zhang/William
 Version: 1.1.0
-Date: 2025-09-12
+Date: 2025-09-14
 """
 
 import os
@@ -156,7 +156,7 @@ class EchoAgent:
             self.question_count: int = 0
             
             # 注册本地工具
-            self._register_local_tools()
+            # self._register_local_tools()
             
             self.logger.info(
                 "智能体初始化完成", 
@@ -869,6 +869,10 @@ class EchoAgent:
             except Exception:
                 pass
         
+        # 增加额外的共享信息，比如用户ID、聊天记录
+        params["user_id"] = self.config.user_id
+        params["display_conversations"] = self.state_manager.display_conversations
+
         return params
 
     def _create_tool_event(

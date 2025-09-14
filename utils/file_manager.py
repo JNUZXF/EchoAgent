@@ -23,14 +23,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
+from .project_root_finder import get_project_root
 
 def _get_project_root() -> Path:
-    """基于当前文件向上查找项目根目录(包含README.md)"""
-    current = Path(__file__).resolve()
-    for parent in current.parents:
-        if (parent / "README.md").exists():
-            return parent
-    return current.parent.parent
+    """
+    【模块化设计】基于新的智能根目录查找机制
+    
+    使用统一的项目根目录查找器，支持多种查找策略：
+    1. 环境变量指定 (AGENT_PROJECT_ROOT)
+    2. 项目标识文件 (.project-root, .agent-root)
+    3. 特征文件组合 (agent_frame.py, pyproject.toml, requirements.txt等)
+    4. 智能推断兜底
+    """
+    return get_project_root(Path(__file__))
 
 def _sanitize_for_fs(name: str) -> str:
     """将用户ID等字符串转为文件系统安全的名称"""

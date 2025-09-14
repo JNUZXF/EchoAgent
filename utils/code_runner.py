@@ -47,16 +47,26 @@ _EXECUTOR_REGISTRY: Dict[str, "CodeExecutor"] = {}
 
 
 def _get_project_root_for_logging() -> Path:
-    """定位项目根目录（用于日志与默认存储）。"""
+    """
+    【模块化设计】定位项目根目录（用于日志与默认存储）
+    
+    使用新的智能根目录查找机制，提供更好的兼容性
+    """
     try:
         from utils.file_manager import FileManager  # 复用现有项目根解析
         return FileManager().project_root
     except Exception:
-        current = Path(__file__).resolve()
-        for parent in current.parents:
-            if (parent / 'README.md').exists():
-                return parent
-        return current.parent.parent
+        # 兜底机制：使用新的根目录查找器
+        try:
+            from utils.project_root_finder import get_project_root
+            return get_project_root(Path(__file__))
+        except Exception:
+            # 最终兜底：原始逻辑
+            current = Path(__file__).resolve()
+            for parent in current.parents:
+                if (parent / 'README.md').exists():
+                    return parent
+            return current.parent.parent
 
 
 def _setup_module_logger() -> logging.Logger:
@@ -312,19 +322,29 @@ class CodeExecutor:
         self.safe_builtins = safe_builtins
 
     def _compute_allowed_roots(self) -> List[Path]:
-        """计算允许读写的根目录：项目根下的 workspaces/ 与 files/"""
+        """
+        【模块化设计】计算允许读写的根目录：项目根下的 workspaces/ 与 files/
+        
+        使用新的智能根目录查找机制
+        """
         project_root: Optional[Path] = None
         try:
             from utils.file_manager import FileManager  # 复用现有项目根解析
             project_root = FileManager().project_root
         except Exception:
-            current = Path(__file__).resolve()
-            for parent in current.parents:
-                if (parent / 'README.md').exists():
-                    project_root = parent
-                    break
-            if project_root is None:
-                project_root = current.parent.parent
+            # 兜底机制：使用新的根目录查找器
+            try:
+                from utils.project_root_finder import get_project_root
+                project_root = get_project_root(Path(__file__))
+            except Exception:
+                # 最终兜底：原始逻辑
+                current = Path(__file__).resolve()
+                for parent in current.parents:
+                    if (parent / 'README.md').exists():
+                        project_root = parent
+                        break
+                if project_root is None:
+                    project_root = current.parent.parent
         return [
             (project_root / 'workspaces').resolve(),
             (project_root / 'files').resolve(),

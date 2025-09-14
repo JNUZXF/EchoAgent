@@ -44,20 +44,24 @@ class PathManager:
     
     def _find_project_root(self) -> str:
         """
-        【分层架构】自动查找项目根目录
+        【分层架构】【模块化设计】自动查找项目根目录
         
-        通过查找特征文件来确定项目根目录，避免硬编码路径
+        使用新的智能根目录查找机制，支持多种项目结构
         """
-        # 从当前文件开始向上查找
-        current_path = Path(__file__).resolve()
-        
-        # 查找包含agent目录和README.md的目录作为项目根目录
-        for parent in current_path.parents:
-            if (parent / "agent").exists() and (parent / "README.md").exists():
-                return str(parent)
-        
-        # 如果找不到，使用当前文件所在目录的父目录的父目录
-        return str(current_path.parent.parent.parent)
+        try:
+            from .project_root_finder import get_project_root
+            return str(get_project_root(Path(__file__)))
+        except ImportError:
+            # 兜底机制：如果无法导入新模块，使用原始逻辑
+            current_path = Path(__file__).resolve()
+            
+            # 查找包含agent目录和README.md的目录作为项目根目录
+            for parent in current_path.parents:
+                if (parent / "agent").exists() and (parent / "README.md").exists():
+                    return str(parent)
+            
+            # 如果找不到，使用当前文件所在目录的父目录的父目录
+            return str(current_path.parent.parent.parent)
     
     def _setup_python_path(self):
         """

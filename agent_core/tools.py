@@ -151,7 +151,10 @@ class AgentToolManager:
         # 1. 尝试执行注册表工具
         if self.registry.has(tool_name):
             try:
-                return self.registry.execute(tool_name, json.dumps(kwargs, ensure_ascii=False))
+                result = self.registry.execute(tool_name, json.dumps(kwargs, ensure_ascii=False))
+                if asyncio.iscoroutine(result):
+                    result = await result
+                return result
             except Exception as e:
                 self.logger.error(f"执行注册表工具 '{tool_name}' 失败: {e}")
                 raise

@@ -162,6 +162,42 @@ MAIN_MODEL="anthropic/claude-sonnet-4" python agent_frame.py
 | `max_conversation_history` | Max conversation turns to keep | `100` | `50` |
 | `enable_mcp` | Enable MCP tool integration | `true` | `false` |
 | `log_level` | Logging verbosity | `"INFO"` | `"DEBUG"` |
+| `AGENT_PROJECT_ROOT` | Project root directory path | Auto-detected | `"/path/to/project"` |
+
+### 🗂️ Project Root Configuration
+
+The framework uses an intelligent project root detection mechanism that supports multiple strategies:
+
+**1. Environment Variable (Recommended for production)**
+```bash
+export AGENT_PROJECT_ROOT=/path/to/your/project
+```
+
+**2. Project Marker Files**
+Create a `.project-root` file in your project root:
+```bash
+touch .project-root
+```
+
+**3. Automatic Detection**
+The framework automatically detects project root based on:
+- `agent_frame.py` presence (highest priority)
+- Python project files (`pyproject.toml`, `requirements.txt`)
+- Version control (`.git`)
+- Documentation (`README.md`) (lowest priority)
+
+**Configuration Examples:**
+```python
+from utils.project_root_finder import configure_project_root, create_project_marker
+
+# Programmatic configuration
+configure_project_root("/path/to/project")
+
+# Create marker file
+create_project_marker(Path("/path/to/project"))
+```
+
+See [config/project_root_examples.md](config/project_root_examples.md) for detailed examples.
 
 ### Model Configuration Examples
 

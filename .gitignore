@@ -14,6 +14,7 @@ tests/
 AGENT_DEV
 mcp_project/
 mcp_learning/
+MAS-DEV
 
 # 测试功能，以test_开头的Python文件
 test_*.py

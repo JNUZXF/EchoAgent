@@ -40,7 +40,7 @@ class ToolEventModel(BaseModel):
 
     def to_event_string(self) -> str:
         try:
-            return f"[[TOOL_EVENT]]{json.dumps(self.model_dump(exclude_none=True), ensure_ascii=False)}"
+            return f"[[TOOL_EVENT]]{json.dumps(self.model_dump(exclude_none=True), ensure_ascii=False, default=str)}"
         except Exception:
             payload = {
                 "type": getattr(self, "type", "unknown"),
@@ -52,7 +52,7 @@ class ToolEventModel(BaseModel):
                 v = getattr(self, k, None)
                 if v is not None:
                     payload[k] = v
-            return f"[[TOOL_EVENT]]{json.dumps(payload, ensure_ascii=False)}"
+            return f"[[TOOL_EVENT]]{json.dumps(payload, ensure_ascii=False, default=str)}"
 
 
 class IntentionResultModel(BaseModel):
