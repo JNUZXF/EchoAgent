@@ -27,24 +27,9 @@ openrouter/sonoma-sky-alpha
 
 from abc import ABC, abstractmethod
 import os
-from openai import OpenAI
-from groq import Groq
-from zhipuai import ZhipuAI
-import google.generativeai as genai
-from dashscope import Generation
-from http import HTTPStatus
-from typing import Generator, List, Dict, Any, Optional, Callable, Union
+from typing import Generator, List, Dict, Any, Optional, Callable
 import time
 from functools import wraps
-import threading
-import queue
-from flask import current_app
-
-from dotenv import load_dotenv
-from volcenginesdkarkruntime import Ark
-
-# 加载环境变量
-load_dotenv()
 
 def retry_generator(max_retries: int = 3, delay: float = 1.0):
     """
@@ -85,92 +70,43 @@ ARK_MODEL_ENDPOINTS = {
     "doubao-1.5-lite": "DOUBAO_1_5_LITE_32K_ENDPOINT",
 }
 
-class StreamBuffer:
-    """流式输出缓冲器，提供平滑的逐字输出体验"""
-    
-    def __init__(self, speed: float = 0.01, batch_size: int = 1):
-        """
-        初始化流式缓冲器
-        
-        Args:
-            speed: 字符输出的延迟（秒）
-            batch_size: 一次输出多少个字符
-        """
-        self.speed = speed
-        self.batch_size = batch_size
-        self.buffer = queue.Queue()
-        self.stop_event = threading.Event()
-        self.output_thread = None
-    
-    def start(self):
-        """启动输出线程"""
-        if self.output_thread is None or not self.output_thread.is_alive():
-            self.stop_event.clear()
-            self.output_thread = threading.Thread(target=self._output_worker)
-            self.output_thread.daemon = True
-            self.output_thread.start()
-    
-    def stop(self):
-        """停止输出线程"""
-        if self.output_thread and self.output_thread.is_alive():
-            self.stop_event.set()
-            self.output_thread.join(timeout=1.0)
-    
-    def add_text(self, text: str):
-        """添加文本到缓冲区"""
-        if not text:
-            return
-        for char in text:
-            self.buffer.put(char)
-    
-    def _output_worker(self):
-        """输出工作线程"""
-        while not self.stop_event.is_set():
-            # 获取一批字符
-            batch = []
-            for _ in range(self.batch_size):
-                try:
-                    char = self.buffer.get(block=True, timeout=0.1)
-                    batch.append(char)
-                    self.buffer.task_done()
-                except queue.Empty:
-                    break
-            
-            # 输出这一批字符
-            if batch:
-                print(''.join(batch), end='', flush=True)
-                time.sleep(self.speed)
-            elif self.buffer.empty():
-                time.sleep(0.1)  # 缓冲区为空时，短暂休眠
 
 # --- Helper function to get config value ---
 def get_api_config(key: str) -> Optional[str]:
     """安全获取API Key/endpoint，优先从Flask应用配置获取，其次从环境变量获取。"""
     value = None
-    source = None
     
     try:
-        # 1. 首先尝试从Flask app.config获取
-        if current_app:
-            config_value = current_app.config.get('API_KEYS', {}).get(key)
-            if config_value:
-                value = config_value
-                source = "Flask app.config"
+        # 1. 首先尝试从Flask app.config获取（懒加载Flask）
+        try:
+            from flask import current_app
+            if current_app:
+                config_value = current_app.config.get('API_KEYS', {}).get(key)
+                if config_value:
+                    value = config_value
+        except (ImportError, RuntimeError):
+            # Flask不可用或应用上下文不可用，这是正常的
+            pass
+        except Exception as e:
+            print(f"尝试从Flask config获取API Key时出错: {e}")
         
-    except RuntimeError:
-        # Flask应用上下文不可用，这是正常的，当在应用上下文之外使用该函数时
-        pass
+        # 2. 如果从Flask配置未获取到，尝试从环境变量获取
+        if not value:
+            # 懒加载dotenv
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+            
+            env_value = os.getenv(key)
+            if env_value:
+                value = env_value
+    
     except Exception as e:
-        print(f"尝试从Flask config获取API Key时出错: {e}")
-    
-    # 2. 如果从Flask配置未获取到，尝试从环境变量获取
-    if not value:
-        env_value = os.getenv(key)
-        if env_value:
-            value = env_value
-            source = "环境变量"
-    
-    # 记录密钥获取结果
+        print(f"获取API配置时出错: {e}")
+        # 最后尝试直接从环境变量获取
+        value = os.getenv(key)
 
     return value
 
@@ -213,7 +149,14 @@ class OpenAIProvider(BaseLLMProvider):
         if not self.api_key:
             raise ValueError("OpenAI API Key not found in configuration.")
         self.model = model
-        self.client = OpenAI(api_key=self.api_key)
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(api_key=self.api_key)
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         completion = self.client.chat.completions.create(
@@ -245,8 +188,15 @@ class ZhipuProvider(BaseLLMProvider):
         self.api_key = get_api_config('ZHIPU_API_KEY')
         if not self.api_key:
             raise ValueError("Zhipu API Key not found in configuration.")
-        self.client = ZhipuAI(api_key=self.api_key)
         self.model = model
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from zhipuai import ZhipuAI
+            self._client = ZhipuAI(api_key=self.api_key)
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         response = self.client.chat.completions.create( # type: ignore
@@ -278,8 +228,15 @@ class GroqProvider(BaseLLMProvider):
         self.api_key = get_api_config('GROQ_API_KEY')
         if not self.api_key:
              raise ValueError("Groq API Key not found in configuration.")
-        self.client = Groq(api_key=self.api_key)
         self.model = model
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from groq import Groq
+            self._client = Groq(api_key=self.api_key)
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         completion = self.client.chat.completions.create( # type: ignore
@@ -311,8 +268,15 @@ class DeepseekProvider(BaseLLMProvider):
         self.api_key = get_api_config('DEEPSEEK_API_KEY')
         if not self.api_key:
              raise ValueError("Deepseek API Key not found in configuration.")
-        self.client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com/v1")
         self.model = model
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com/v1")
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         response = self.client.chat.completions.create(
@@ -345,10 +309,17 @@ class GeminiProvider(BaseLLMProvider):
         if not self.api_key:
             raise ValueError("Gemini API Key not found in configuration.")
         self.model = model
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-        )
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         response = self.client.chat.completions.create(
@@ -390,6 +361,8 @@ class QwenProvider(BaseLLMProvider):
         self.model = model
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
+        from dashscope import Generation
+        from http import HTTPStatus
         responses = Generation.call(
             self.model,
             messages=[{'role': 'user', 'content': question}], # type: ignore
@@ -404,6 +377,8 @@ class QwenProvider(BaseLLMProvider):
                 yield response.output.choices[0]['message']['content'] # type: ignore
                 
     def generate_stream_conversation(self, conversations: List[Dict[str, str]], temperature: float = 0.95) -> Generator[str, None, None]:
+        from dashscope import Generation
+        from http import HTTPStatus
         responses = Generation.call(
             self.model,
             messages=conversations, # type: ignore
@@ -421,10 +396,17 @@ class OllamaProvider(BaseLLMProvider):
     """Ollama开源模型提供者"""
     def __init__(self, model: str):
         self.model = model.split("/")[-1]
-        self.client = OpenAI(
-            base_url='http://localhost:11434/v1',
-            api_key='ollama'
-        )
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(
+                base_url='http://localhost:11434/v1',
+                api_key='ollama'
+            )
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         response = self.client.chat.completions.create(
@@ -457,11 +439,18 @@ class OpenRouterProvider(BaseLLMProvider):
         self.api_key = get_api_config('OPENROUTER_API_KEY')
         if not self.api_key:
             raise ValueError("OpenRouter API Key not found in configuration.")
-        self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.api_key
-        )
         self.model = model
+        self._client = None
+        
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.api_key
+            )
+        return self._client
         
     @retry_generator(max_retries=3, delay=2.0)  # 增加重试次数和延迟时间
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
@@ -507,14 +496,9 @@ class ArkProvider(BaseLLMProvider):
 
         self.original_model_name = model 
         self.is_seed = "seed" in model 
+        self._client = None
 
-        if self.is_seed:
-            self.client = Ark(
-                base_url="https://ark.cn-beijing.volces.com/api/v3",
-                api_key=self.api_key,
-            )
-            self.model = model 
-        else:
+        if not self.is_seed:
             endpoint_key_map = {
                 "deepseek-v3": "DEEPSEEK_V3_ENDPOINT",
                 "doubao-pro": "DOUBAO_PRO_ENDPOINT",
@@ -528,13 +512,27 @@ class ArkProvider(BaseLLMProvider):
             if not self.model_endpoint:
                  print(f"Endpoint for Ark model '{model}' (key: {endpoint_key}) not found in config. Using model name as endpoint.")
                  self.model_endpoint = model
-
-            self.client = OpenAI(
-                base_url="https://ark.cn-beijing.volces.com/api/v3", 
-                api_key=self.api_key
-            )
             self.model = self.model_endpoint 
+        else:
+            self.model = model 
         self.is_doubao = "doubao" in model
+        
+    @property
+    def client(self):
+        if self._client is None:
+            if self.is_seed:
+                from volcenginesdkarkruntime import Ark
+                self._client = Ark(
+                    base_url="https://ark.cn-beijing.volces.com/api/v3",
+                    api_key=self.api_key,
+                )
+            else:
+                from openai import OpenAI
+                self._client = OpenAI(
+                    base_url="https://ark.cn-beijing.volces.com/api/v3", 
+                    api_key=self.api_key
+                )
+        return self._client
         
     def generate_stream(self, question: str, temperature: float = 0.95) -> Generator[str, None, None]:
         if self.is_seed:
@@ -660,16 +658,8 @@ class LLMManager:
         
 # 使用示例
 if __name__ == "__main__":
-    # 示例：字符级流式输出
-    print("\n=== 字符级流式输出示例 ===")
-    llm = LLMManager("gemini-2.0-flash")
-    llm.print_char_stream("简要介绍人工智能的发展历史", delay=0.02)
-    
-    # 示例：多轮对话
-    print("\n=== 多轮对话示例 ===")
-    conversations = [
-        {"role": "system", "content": "你是一个专业的科学顾问。"},
-        {"role": "user", "content": "解释一下黑洞的霍金辐射"}
-    ]
-    llm = LLMManager("gemini-2.-flash")
-    llm.print_char_conversation(conversations, delay=0.015) 
+    # 简单测试
+    llm = LLMManager("gemini-2.5-flash")
+    response = llm.generate_stream("你好")
+    for chunk in response:
+        print(chunk, end='', flush=True) 

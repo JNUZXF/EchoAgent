@@ -36,10 +36,11 @@ from tools_agent.llm_manager import LLMManager
 from utils.code_runner import extract_python_code
 from utils.file_manager import file_manager, SessionInfo
 
-from prompts.agent_prompts import (
-    TOOL_RESULT_ANA_PROMPT,
-)
 from tools_agent.builtin_tools import CodeRunner as Tool_CodeRunner, continue_analyze as Tool_ContinueAnalyze
+
+from prompts.agent_prompts import (
+    TOOL_RESULT_ANA_PROMPT
+)
 
 # 导入配置管理模块
 from config import AgentSettings, create_agent_config
@@ -53,7 +54,7 @@ os.environ["NUMEXPR_MAX_THREADS"] = "32"
 MODULE_LOGGER = logging.getLogger("agent.bootstrap")
 MODULE_LOGGER.info("AgentCoder模块加载完成")
 
-# 类型别名（如需可在此处补充实际使用的别名）
+# 类型别名
 VersionLiteral = Literal["v1", "v2"]
 
 class EchoAgent:
@@ -1064,88 +1065,44 @@ class EchoAgent:
         return query.lower() in exit_commands
 
 
-# 工具注册示例
-from pydantic import BaseModel, Field
-from tools_agent.toolkit import tool
-class SearchArxivArgs(BaseModel):
-    keyword: str = Field(..., description="论文关键词")
-    max_results: int = Field(..., description="最大返回论文篇数")
-
-@tool
-def search_arxiv(args: SearchArxivArgs):
-    """
-    搜索Arxiv论文：
-    输入：
-        keyword: 论文关键词
-        max_results: 最大返回论文篇数
-    输出：
-        markdown格式论文摘要
-    示例：
-        {{"tools": ["search_arxiv(keyword='LLM Agent', max_results=5)"]}}
-    """
-    # 【单一职责原则】【日志系统原则】【可扩展性原则】
-    import requests
-    import logging
-
-    # 日志记录
-    logger = logging.getLogger("tool.search_arxiv")
-    logger.info(f"开始检索arxiv论文, 关键词: {args.keyword}")
-
-    # 默认返回论文篇数
-    max_results = args.max_results
+# 创建智能体通用函数
+def create_agent(
+    user_id: str = "simmons",
+    agent_name: str = "SubAgent",
+    workspace: str = None,
+    main_model: str = "qwen/qwen3-next-80b-a3b-instruct",
+    tool_model: str = "qwen/qwen3-next-80b-a3b-instruct",
+    flash_model: str = "doubao-pro",
+    conversation_id: str = "ConstructingAgent",
+    user_system_prompt: str = "简单问题直接回答，复杂问题请拆解多个步骤，逐步完成。",
+    tool_use_example: str = "",
+    code_runner_session_id: str = "code_runner_session_id",
+    enable_mcp: bool = False,
+    mcp_config_path: str = "custom_server_config.json",
+) -> EchoAgent:
     try:
-        # 构造arXiv API查询
-        url = "http://export.arxiv.org/api/query"
-        params = {
-            "search_query": f"all:{args.keyword}",
-            "start": 0,
-            "max_results": max_results,
-            "sortBy": "submittedDate",
-            "sortOrder": "descending"
-        }
-        response = requests.get(url, params=params, timeout=10)
-        logger.info(f"arXiv API请求URL: {response.url}")
-        if response.status_code != 200:
-            logger.error(f"arXiv API请求失败, 状态码: {response.status_code}")
-            return {"answer": f"arXiv API请求失败，状态码: {response.status_code}"}
-
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(response.text)
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
-
-        papers = []
-        for entry in root.findall("atom:entry", ns):
-            title = entry.find("atom:title", ns).text.strip().replace("\n", " ")
-            summary = entry.find("atom:summary", ns).text.strip().replace("\n", " ")
-            link = entry.find("atom:id", ns).text.strip()
-            authors = [author.find("atom:name", ns).text for author in entry.findall("atom:author", ns)]
-            authors_str = ", ".join(authors)
-            papers.append({
-                "title": title,
-                "summary": summary,
-                "link": link,
-                "authors": authors_str
-            })
-
-        if not papers:
-            logger.info("未检索到相关论文")
-            return {"answer": f"未检索到与“{args.keyword}”相关的arXiv论文。"}
-
-        # 组装markdown格式
-        md = f"### arXiv论文检索结果（关键词：{args.keyword}）\n\n"
-        for idx, paper in enumerate(papers, 1):
-            md += f"**{idx}. [{paper['title']}]({paper['link']})**  \n"
-            md += f"作者: {paper['authors']}  \n"
-            md += f"摘要: {paper['summary']}\n\n"
-
-        logger.info(f"arXiv论文检索成功, 返回{len(papers)}条结果")
-        # 操作日志
-        print(f"[search_arxiv] 用户关键词: {args.keyword}, 返回{len(papers)}条论文摘要")
-        return {"answer": md}
-    except Exception as e:
-        logger.exception(f"arXiv检索异常: {e}")
-        return {"answer": f"arXiv检索失败: {e}"}
+        config = create_agent_config(
+            user_id=user_id,
+            main_model=main_model,
+            tool_model=tool_model,
+            flash_model=flash_model,
+            conversation_id=conversation_id,
+            workspace=workspace,
+            agent_name=agent_name,
+            use_new_config=True,
+            user_system_prompt=user_system_prompt,
+            tool_use_example=tool_use_example,
+            code_runner_session_id=code_runner_session_id,
+            enable_mcp=enable_mcp, 
+            mcp_config_path=mcp_config_path,  
+        )
+        agent = EchoAgent(config)
         
+        return agent
+    except Exception as e:
+        print(f"⚠️ 初始化失败: {e}")
+        return None
+    
 # 命令行聊天模式函数
 async def agent_chat_loop(
     version: VersionLiteral = "v1"
@@ -1197,7 +1154,6 @@ async def agent_chat_loop(
             # mcp_config_path="custom_server_config.json",  # 可选：自定义MCP配置文件路径
         )
         agent = EchoAgent(config)
-        agent.tool_manager.register_tool_function(search_arxiv)
         
         # 【异步处理】在启动时初始化MCP工具并显示
         print("🔧 正在初始化MCP工具...")

@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 from tools_agent.llm_manager import *
 from tools_agent.json_tool import *
-from tools_agent.pdf_reader_markitdown import *
+from utils.content_extract.pdf_reader_markitdown import *
 
 class PaperProcessor:
     def __init__(self, model: str, transfer_path: str, max_concurrent: int = 3):

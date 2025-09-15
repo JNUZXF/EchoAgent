@@ -1,16 +1,15 @@
 
-"""
 
-测试由一个智能体调用Coding Agent完成任务的MAS系统
-
-"""
 
 from textwrap import dedent
+from typing import Optional, List
 from agent_frame import *
 from pydantic import BaseModel, Field
+import arxiv
+
 from tools_agent.builtin_tools import CodeRunner
 from tools_agent.toolkit import tool
-
+from utils.academic_search.arxiv_search import *
 
 def create_agent(
     user_id: str = "simmons",
@@ -49,87 +48,52 @@ def create_agent(
         print(f"⚠️ 初始化失败: {e}")
         return None
 
-class CodingAgentArgs(BaseModel):
-    kwargs: dict = Field(..., description="代码任务参数")
+class ArxivSearchAgentArgs(BaseModel):
+    query: str = Field(..., description="论文关键词")
+    search_num: int = Field(default=10, description="最大返回论文篇数")
+    kwargs: Optional[dict] = Field(default_factory=dict, description="")
 
-
-CODING_AGENT_TASK_PROMPT = dedent("""
-    # 你的任务
-    你正在帮我完成一个编程任务，请你根据以下我跟你的对话，完成任务。
-
-    # 我跟你的对话
-    {contexts}
-
-    # 我的任务
-    {task}
-    """
-).strip().replace("  ", "")
-
-CODING_AGENT_RESULT_SUMMARY_PROMPT = dedent("""
-    请你将我下面的聊天记录总结成两个关键信息：代码和运行结果。
-
-    # 我的聊天记录
-    {sub_agent_conversation}
-
-    # 输出格式
-    <code>
-    这里是最终成功运行的代码
-    </code>
-
-    <result>
-    这里是代码的运行结果
-    </result>
-""").strip().replace("  ", "")
 
 @tool
-async def coding_agent(**kwargs):
+def search_arxiv(args: ArxivSearchAgentArgs):
     """
-    当需要执行代码任务时，使用这个工具Agent
-
-    输入：
-        空，不需要参数
-    输出：
-        代码及运行结果
+    你可以搜索Arxiv论文，需要确定关键词和搜索篇数
     """
-
-    # 日志记录
-    logger = logging.getLogger("tool.coding_agent")
-
-    user_id = kwargs.get("user_id", "simmons")
-    contexts = kwargs.get("display_conversations", [])
-    task = kwargs.get("task", "")
-    conversation_id = "test"
+    searcher = ArxivSearcher()
+    
+    # 【参数优先级】【可扩展性原则】支持kwargs参数覆盖，kwargs中的参数优先级更高
+    kwargs = args.kwargs or {}
+    
+    # 获取最终参数值，kwargs中的值优先
+    final_query = kwargs.get("query", args.query)
+    final_search_num = kwargs.get("search_num", args.search_num)
+    
     try:
+        formatted_info = searcher.get_formatted_papers_info(
+            query=final_query,
+            search_num=final_search_num
+        )
         
-        user_system_prompt = CODING_AGENT_TASK_PROMPT.format(contexts=contexts, task=task)
-        agent = create_agent(
-            user_id=user_id,
-            user_system_prompt=user_system_prompt,
-            conversation_id=conversation_id,
-        )
-        agent.tool_manager.register_tool_function(CodeRunner)
-
-        question = "开始吧！"
-        async for char in agent.process_query(question, version="v1"):
-            print(char, end="", flush=True)
-
-        # 所有的聊天记录
-        sub_agent_conversation = agent.state_manager.display_conversations
-
-        # 任务总结 - 用小模型快速总结关键代码及运行结果
-        prompt = CODING_AGENT_RESULT_SUMMARY_PROMPT.format(
-            sub_agent_conversation=sub_agent_conversation
-        )
-        llm = LLMManager(model="qwen/qwen3-next-80b-a3b-instruct")
-        summary = ""
-        for char in llm.generate_char_stream(prompt):
-            print(char, end="", flush=True)
-            summary += char
-        return summary
-
+        # 【扩展性原则】如果kwargs中有额外的处理需求，可以在这里添加
+        if kwargs.get("include_metadata", False):
+            # 可以添加额外的元数据信息
+            result = {
+                "papers": formatted_info,
+                "search_params": {
+                    "query": final_query,
+                    "search_num": final_search_num,
+                    "sort_by": arxiv.SortCriterion.Relevance,
+                    "sort_order": arxiv.SortOrder.Descending
+                },
+                "user_id": kwargs.get("user_id"),
+                "timestamp": kwargs.get("timestamp")
+            }
+            return result
+        
+        return formatted_info
     except Exception as e:
-        logger.exception(f"代码任务执行异常: {e}")
-
+        error_msg = f"搜索arxiv论文时发生错误: {str(e)}"
+        return {"error": error_msg}
 
 # 命令行聊天模式函数
 async def agent_chat_loop(
@@ -155,8 +119,8 @@ async def agent_chat_loop(
     main_model = model_mapping_v2["main_model"]
     tool_model = model_mapping_v2["tool_model"]
     flash_model = model_mapping_v2["flash_model"]
-    tool_use_example = ""
-    user_system_prompt = "当你需要编程时，调用coding_agent完成任务"
+    tool_use_example = "当你需要搜索论文时，调用search_arxiv完成任务"
+    user_system_prompt = "你要严格遵守我的指示。"
     # code_runner session_id
     code_runner_session_id = "code_runner_session_id"
     try:
@@ -176,7 +140,7 @@ async def agent_chat_loop(
             # mcp_config_path="custom_server_config.json",  # 可选：自定义MCP配置文件路径
         )
         agent = EchoAgent(config)
-        agent.tool_manager.register_tool_function(coding_agent)
+        agent.tool_manager.register_tool_function(search_arxiv)
         await agent.chat_loop_common(version=version)
 
     except KeyboardInterrupt:
@@ -205,25 +169,81 @@ async def agent_chat_loop(
         print("智能体已关闭，再见！👋")
 
 
-def test_coding_agent():
-    task = "构建两只股票的虚拟数据，接近真实数据，画出走势图"
-    kwargs = {
-        "task": "构建两只股票的虚拟数据，接近真实数据，画出走势图",
-        "user_id": "simmons",
-        "display_conversations": """
-    用户：你好，我想构建两只股票的虚拟数据，接近真实数据，画出走势图
-    我：好的，请稍等。
-    """,
+def test():
+    """
+    测试search_arxiv工具的不同调用方式
+    """
+    print("=== 测试1：使用基础参数 ===")
+    args1 = ArxivSearchAgentArgs(
+        query="LLM Agent",
+        search_num=5
+    )
+    result1 = search_arxiv(args1)
+    print(f"结果1类型: {type(result1)}")
+    
+    print("\n=== 测试2：使用kwargs扩展参数 ===")
+    args2 = ArxivSearchAgentArgs(
+        query="AI Agent",
+        search_num=3,
+        kwargs={
+            "user_id": "simmons",
+            "display_conversations": "用户：搜索论文\n我：好的，请稍等。",
+            "timestamp": "2025-09-15",
+            "include_metadata": True,
+            # 也可以通过kwargs覆盖主参数
+            "search_num": 8,  # 这会覆盖上面的search_num=3
+            "sort_by": "SubmittedDate"
+        }
+    )
+    result2 = search_arxiv(args2)
+    print(f"结果2类型: {type(result2)}")
+    
+    print("\n=== 测试3：Agent调用示例格式 ===")
+    # 模拟Agent会传递的参数格式
+    import json
+    agent_params = {
+        "query": "LLM Agent",
+        "search_num": 10,
+        "kwargs": {
+            "user_id": "ada",
+            "display_conversations": "===user===:\n搜索10篇最新的LLM Agent相关的论文并总结创新之处\n===assistant===:\n好的，我将使用search_arxiv工具搜索10篇最新的LLM Agent相关论文。请稍等。\n\n"
+        }
     }
-    asyncio.run(coding_agent(**kwargs))
+    
+    # 验证这个格式可以被正确解析
+    try:
+        args3 = ArxivSearchAgentArgs(**agent_params)
+        print("✅ Agent参数格式验证成功")
+        result3 = search_arxiv(args3)
+        print(f"结果3类型: {type(result3)}")
+    except Exception as e:
+        print(f"❌ Agent参数格式验证失败: {e}")
+
+# 测试异步版本
+async def test_async():
+    """
+    异步测试函数
+    """
+    print("=== 异步测试 ===")
+    args = ArxivSearchAgentArgs(
+        query="LLM Agent",
+        search_num=2,
+        kwargs={
+            "user_id": "test_user",
+            "timestamp": "2025-09-15"
+        }
+    )
+    result = search_arxiv(args)
+    print(f"异步测试结果类型: {type(result)}")
+    return result
 
 # 程序入口点
 if __name__ == "__main__":
     """
     测试问题：
-    构建两只股票的虚拟数据，接近真实数据，画出走势图;
-    设计电商领域的数据，展示全面的数据分析，图文并茂，让我学习。必须使用高级封装代码，比如class等高级抽象
-    搜索10篇最新的LLM Agent相关的论文并总结创新之处
+    搜索5篇最新的Agent相关的论文并总结创新之处
     """
     asyncio.run(agent_chat_loop())
+
+
 
